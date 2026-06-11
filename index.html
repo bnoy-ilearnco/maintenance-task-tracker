@@ -568,8 +568,8 @@
                 <input type="hidden" id="taskId">
                 <label>Time<input id="taskTime" type="time" required></label>
                 <label>Default Assignee<select id="taskAssignee" required></select></label>
-                <label>Task Name<input id="taskTitleEn" required placeholder="Clean entrance"></label>
-                <label>Spanish Task Name<input id="taskTitleEs" placeholder="Limpiar entrada"></label>
+                <label>Task Name in English<input id="taskTitleEn" required placeholder="Clean entrance"></label>
+                <label>Spanish Translation<input id="taskTitleEs" readonly placeholder="Auto-translates for workers"></label>
                 <label>Status
                   <select id="taskActive">
                     <option value="true">Active</option>
@@ -786,6 +786,82 @@
       return state.completions.find((item) => item.taskId === taskId && item.workerId === workerId && item.dateKey === date);
     }
 
+    function fallbackSpanishTranslation(text) {
+      const phrases = [
+        ["bathrooms", "banos"],
+        ["bathroom", "bano"],
+        ["restrooms", "banos"],
+        ["restroom", "bano"],
+        ["cafeteria", "cafeteria"],
+        ["classroom", "salon"],
+        ["classrooms", "salones"],
+        ["hallway", "pasillo"],
+        ["hallways", "pasillos"],
+        ["entrance", "entrada"],
+        ["office", "oficina"],
+        ["trash", "basura"],
+        ["garbage", "basura"],
+        ["floors", "pisos"],
+        ["floor", "piso"],
+        ["windows", "ventanas"],
+        ["window", "ventana"],
+        ["doors", "puertas"],
+        ["door", "puerta"],
+        ["sink", "lavamanos"],
+        ["sinks", "lavamanos"],
+        ["toilets", "inodoros"],
+        ["toilet", "inodoro"],
+        ["lights", "luces"],
+        ["light", "luz"],
+        ["clean", "limpiar"],
+        ["sanitize", "desinfectar"],
+        ["sweep", "barrer"],
+        ["mop", "trapear"],
+        ["vacuum", "aspirar"],
+        ["empty", "vaciar"],
+        ["replace", "reemplazar"],
+        ["refill", "rellenar"],
+        ["check", "revisar"],
+        ["inspect", "inspeccionar"],
+        ["repair", "reparar"],
+        ["set up", "preparar"],
+        ["take down", "guardar"],
+        ["pick up", "recoger"],
+        ["wipe", "limpiar"]
+      ];
+      let translated = ` ${text.toLowerCase()} `;
+      phrases.forEach(([english, spanish]) => {
+        translated = translated.replaceAll(` ${english} `, ` ${spanish} `);
+      });
+      return translated.trim().replace(/^\w/, (char) => char.toUpperCase());
+    }
+
+    async function translateTaskTitle(text) {
+      const source = text.trim();
+      if (!source) return "";
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(source)}&langpair=en|es`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Translation service unavailable");
+        const data = await response.json();
+        const translated = data?.responseData?.translatedText?.trim();
+        if (translated) return translated;
+      } catch (error) {
+        console.warn("Using fallback Spanish task translation.", error);
+      }
+      return fallbackSpanishTranslation(source);
+    }
+
+    let translationTimer = null;
+    function scheduleTaskTitleTranslation() {
+      clearTimeout(translationTimer);
+      translationTimer = setTimeout(async () => {
+        const englishTitle = $("taskTitleEn").value.trim();
+        $("taskTitleEs").value = englishTitle ? "Translating..." : "";
+        $("taskTitleEs").value = await translateTaskTitle(englishTitle);
+      }, 450);
+    }
+
     function updateWorkerUi() {
       const people = activeStaff();
       $("workerGrid").innerHTML = people.length ? people.map((person) => `
@@ -992,12 +1068,19 @@
       );
     }
 
-    function showTasksModal() {
+    function showTasksModal(options = {}) {
       const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
       if (!worker) return;
       const date = todayKey();
       const tasks = tasksForWorker(worker.id, date);
+      const welcome = options.welcome ? `
+        <div class="status-line">
+          Welcome! Here is your schedule for the day.<br>
+          Bienvenido! Aqui esta su horario del dia.
+        </div>
+      ` : "";
       const body = tasks.length ? `
+        ${welcome}
         <div class="task-list">
           ${tasks.map(({ task, redistributed }) => {
             const done = completionFor(task.id, worker.id, date);
@@ -1015,7 +1098,7 @@
               </div>
             `;
           }).join("")}
-        </div>` : `<p>No tasks assigned today / No tiene tareas asignadas hoy.</p>`;
+        </div>` : `${welcome}<p>No tasks assigned today / No tiene tareas asignadas hoy.</p>`;
       openModal(`Tasks for ${worker.name} / Tareas de ${worker.name}`, body, `<button class="blue" id="modalCancel">Close / Cerrar</button>`);
     }
 
@@ -1067,7 +1150,10 @@
         state.selectedWorkerId = target.dataset.workerId;
         updateWorkerUi();
       }
-      if (target.id === "clockInBtn") await clock("in");
+      if (target.id === "clockInBtn") {
+        await clock("in");
+        showTasksModal({ welcome: true });
+      }
       if (target.id === "clockOutBtn") await clock("out");
       if (target.id === "timeOffBtn") showTimeOffModal();
       if (target.id === "tasksBtn") showTasksModal();
@@ -1154,10 +1240,14 @@
 
     $("taskForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      $("taskSubmit").disabled = true;
+      $("taskSubmit").textContent = "Translating...";
+      const englishTitle = $("taskTitleEn").value.trim();
+      const spanishTitle = await translateTaskTitle(englishTitle);
       const payload = {
         time: $("taskTime").value,
-        titleEn: $("taskTitleEn").value.trim(),
-        titleEs: $("taskTitleEs").value.trim(),
+        titleEn: englishTitle,
+        titleEs: spanishTitle,
         defaultAssigneeId: $("taskAssignee").value,
         active: $("taskActive").value === "true",
         updatedAt: serverTimestamp()
@@ -1165,6 +1255,7 @@
       const id = $("taskId").value;
       if (id) await updateDoc(doc(state.db, "tasks", id), payload);
       else await addDoc(collection(state.db, "tasks"), { ...payload, createdAt: serverTimestamp() });
+      $("taskSubmit").disabled = false;
       resetTaskForm();
     });
 
@@ -1187,6 +1278,10 @@
 
     $("staffCancel").addEventListener("click", resetStaffForm);
     $("taskCancel").addEventListener("click", resetTaskForm);
+    $("taskTitleEn").addEventListener("input", scheduleTaskTitleTranslation);
+    $("taskTitleEn").addEventListener("blur", async () => {
+      $("taskTitleEs").value = await translateTaskTitle($("taskTitleEn").value);
+    });
     $("modalBackdrop").addEventListener("click", (event) => {
       if (event.target.id === "modalBackdrop") closeModal();
     });
