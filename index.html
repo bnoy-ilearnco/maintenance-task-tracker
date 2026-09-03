@@ -1487,7 +1487,8 @@
     });
 
     document.addEventListener("keydown", async (event) => {
-      if ($("pinPanel").classList.contains("hidden")) return;
+      const isPinScreenActive = $("workerView").classList.contains("active") && !$("pinPanel").classList.contains("hidden");
+      if (!isPinScreenActive) return;
       if (/^\d$/.test(event.key) || event.key === "Backspace" || event.key === "Delete" || event.key === "Escape" || event.key === "Enter") {
         event.preventDefault();
       }
