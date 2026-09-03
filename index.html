@@ -580,7 +580,7 @@
           <nav class="admin-nav panel">
             <button class="plain active" data-admin-tab="dashboard">Dashboard</button>
             <button class="plain director-only" data-admin-tab="staff">Staff & PINs</button>
-            <button class="plain director-only" data-admin-tab="users">Supervisors</button>
+            <button class="plain director-only" data-admin-tab="users">HR Users</button>
             <button class="plain" data-admin-tab="records">Time Records</button>
             <button class="plain" data-admin-tab="reviews">Monthly Reviews</button>
             <button class="plain" data-admin-tab="settings">Account Settings</button>
@@ -631,14 +631,20 @@
             <section class="admin-section director-only" id="usersSection">
               <div class="section-head">
                 <div>
-                  <h2>Supervisor Users</h2>
-                  <p class="small">Create HR supervisors and attach them to one or more staff groups.</p>
+                  <h2>HR Users</h2>
+                  <p class="small">Create Directors or supervisors. Directors can manage all HR users, while supervisors only see their assigned groups.</p>
                 </div>
               </div>
               <form class="form-grid" id="userForm">
                 <input type="hidden" id="userId">
                 <label>Name<input id="userName" required></label>
                 <label>Username<input id="userUsername" required autocomplete="off"></label>
+                <label>Role
+                  <select id="userRole">
+                    <option value="supervisor">Supervisor</option>
+                    <option value="director">Director</option>
+                  </select>
+                </label>
                 <label>Password<input id="userPassword" type="password" minlength="6" placeholder="Required for new users"></label>
                 <label>Status
                   <select id="userActive">
@@ -648,14 +654,15 @@
                 </label>
                 <div class="full">
                   <label>Groups</label>
+                  <p class="small" id="userGroupHelp">Assign supervisors to one or more staff groups.</p>
                   <div class="check-grid" id="userGroupChecks"></div>
                 </div>
-                <button class="blue" type="submit" id="userSubmit">Add Supervisor</button>
+                <button class="blue" type="submit" id="userSubmit">Add HR User</button>
                 <button class="outline" type="button" id="userCancel">Cancel Edit</button>
               </form>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Name</th><th>Username</th><th>Groups</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Groups</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody id="userRows"></tbody>
                 </table>
               </div>
@@ -946,17 +953,39 @@
       if ([...$(selectId).options].some((option) => option.value === current)) $(selectId).value = current;
     }
 
-    function renderUserGroupChecks(selected = []) {
+    function renderUserGroupChecks(selected = [], options = {}) {
+      const disabled = options.disabled ? "disabled" : "";
       $("userGroupChecks").innerHTML = GROUPS.map((group) => `
         <label class="check-option">
-          <input type="checkbox" name="userGroup" value="${group.id}" ${selected.includes(group.id) ? "checked" : ""}>
+          <input type="checkbox" name="userGroup" value="${group.id}" ${selected.includes(group.id) ? "checked" : ""} ${disabled}>
           <span>${esc(group.name)}</span>
         </label>
       `).join("");
     }
 
     function selectedUserGroups() {
-      return [...document.querySelectorAll("input[name='userGroup']:checked")].map((input) => input.value);
+      return [...document.querySelectorAll("input[name='userGroup']:checked:not(:disabled)")].map((input) => input.value);
+    }
+
+    function roleName(role) {
+      return role === "director" ? "Director" : "Supervisor";
+    }
+
+    function userGroupSummary(user) {
+      if (user.role === "director") return "All groups";
+      return (user.groupIds || []).map(groupName).join(", ") || "No groups";
+    }
+
+    function syncUserRoleForm() {
+      const isDirector = $("userRole").value === "director";
+      if (isDirector) {
+        renderUserGroupChecks(GROUPS.map((group) => group.id), { disabled: true });
+        $("userGroupHelp").textContent = "Directors automatically have access to all staff groups.";
+      } else {
+        renderUserGroupChecks(selectedUserGroups());
+        $("userGroupHelp").textContent = "Assign supervisors to one or more staff groups.";
+      }
+      $("userSubmit").textContent = `${$("userId").value ? "Save" : "Add"} ${roleName($("userRole").value)}`;
     }
 
     function applyRoleVisibility() {
@@ -1062,23 +1091,24 @@
 
     function renderUserRows() {
       $("userRows").innerHTML = state.users
-        .filter((user) => user.role === "supervisor")
-        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .filter((user) => ["director", "supervisor"].includes(user.role))
+        .sort((a, b) => roleName(a.role).localeCompare(roleName(b.role)) || String(a.name).localeCompare(String(b.name)))
         .map((user) => `
           <tr>
             <td>${esc(user.name)}</td>
             <td>${esc(user.username)}</td>
-            <td>${esc((user.groupIds || []).map(groupName).join(", ") || "No groups")}</td>
-            <td><span class="pill supervisor">${user.active === false ? "Inactive" : "Active"}</span></td>
+            <td><span class="pill ${esc(user.role)}">${esc(roleName(user.role))}</span></td>
+            <td>${esc(userGroupSummary(user))}</td>
+            <td><span class="pill">${user.active === false ? "Inactive" : "Active"}</span></td>
             <td>
               <div class="row-actions">
                 <button class="outline" data-edit-user="${user.id}">Edit</button>
                 <button class="outline" data-toggle-user="${user.id}">${user.active === false ? "Activate" : "Deactivate"}</button>
-                <button class="red" data-delete-user="${user.id}">Remove</button>
+                ${state.hrUser?.id === user.id ? "" : `<button class="red" data-delete-user="${user.id}">Remove</button>`}
               </div>
             </td>
           </tr>
-        `).join("") || `<tr><td colspan="5">No supervisor users created yet.</td></tr>`;
+        `).join("") || `<tr><td colspan="6">No HR users created yet.</td></tr>`;
     }
 
     function renderRecordFilters() {
@@ -1199,10 +1229,12 @@
       $("userName").value = "";
       $("userUsername").value = "";
       $("userUsername").readOnly = false;
+      $("userRole").value = "supervisor";
       $("userPassword").value = "";
       $("userPassword").required = true;
       $("userActive").value = "true";
       renderUserGroupChecks([]);
+      $("userGroupHelp").textContent = "Assign supervisors to one or more staff groups.";
       $("userSubmit").textContent = "Add Supervisor";
     }
 
@@ -1444,11 +1476,18 @@
         $("userName").value = user.name;
         $("userUsername").value = user.username;
         $("userUsername").readOnly = true;
+        $("userRole").value = user.role === "director" ? "director" : "supervisor";
         $("userPassword").value = "";
         $("userPassword").required = false;
         $("userActive").value = String(user.active !== false);
-        renderUserGroupChecks(user.groupIds || []);
-        $("userSubmit").textContent = "Save Supervisor";
+        if (user.role === "director") {
+          renderUserGroupChecks(GROUPS.map((group) => group.id), { disabled: true });
+          $("userGroupHelp").textContent = "Directors automatically have access to all staff groups.";
+        } else {
+          renderUserGroupChecks(user.groupIds || []);
+          $("userGroupHelp").textContent = "Assign supervisors to one or more staff groups.";
+        }
+        $("userSubmit").textContent = `Save ${roleName(user.role)}`;
         setAdminTab("users");
       }
       if (target.dataset.toggleUser) {
@@ -1541,22 +1580,23 @@
       if (state.hrUser?.role !== "director") return;
       const id = $("userId").value;
       const username = normalizeUsername($("userUsername").value);
-      const groupIds = selectedUserGroups();
-      if (!groupIds.length) {
+      const role = $("userRole").value === "director" ? "director" : "supervisor";
+      const groupIds = role === "director" ? GROUPS.map((group) => group.id) : selectedUserGroups();
+      if (role === "supervisor" && !groupIds.length) {
         alert("Choose at least one group for this supervisor.");
         return;
       }
       const payload = {
         name: $("userName").value.trim(),
         username,
-        role: "supervisor",
+        role,
         groupIds,
         active: $("userActive").value === "true",
         updatedAt: serverTimestamp()
       };
       const password = $("userPassword").value;
       if (!id && password.length < 6) {
-        alert("Enter a password of at least 6 characters for this supervisor.");
+        alert(`Enter a password of at least 6 characters for this ${roleName(role).toLowerCase()}.`);
         return;
       }
       if (password) payload.passwordHash = await sha256(password);
@@ -1596,6 +1636,7 @@
 
     $("staffCancel").addEventListener("click", resetStaffForm);
     $("userCancel").addEventListener("click", resetUserForm);
+    $("userRole").addEventListener("change", syncUserRoleForm);
     ["recordMonth", "recordGroup", "recordStaff", "recordTypeFilter"].forEach((id) => $(id).addEventListener("change", renderLogRows));
     $("reviewMonth").addEventListener("change", () => {
       renderDashboard();
