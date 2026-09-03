@@ -505,7 +505,7 @@
   messagingSenderId: "PASTE_SENDER_ID",
   appId: "PASTE_APP_ID"
 };</pre>
-          <p class="small">Firestore must be enabled for the project. A default HR Director login is created automatically: username <strong>director</strong>, password <strong>admin123</strong>. Change it before daily use.</p>
+          <p class="small">Firestore must be enabled for the project. Create the first Director account in Firestore before daily use.</p>
         </div>
       </section>
 
@@ -566,14 +566,14 @@
           <p class="small">Director and supervisor users can review records here. Supervisors only see staff in their assigned groups.</p>
           <label>
             Username
-            <input id="adminUsernameInput" autocomplete="username" placeholder="director">
+            <input id="adminUsernameInput" autocomplete="username" placeholder="name@school.org">
           </label>
           <label>
             Password
             <input id="adminPasswordInput" type="password" autocomplete="current-password">
           </label>
           <button class="blue" id="adminLoginBtn">Log In</button>
-          <p class="small">Default Director login: <strong>director</strong> / <strong>admin123</strong></p>
+          <p class="small">Use the HR account assigned by your Director.</p>
         </div>
 
         <div id="adminApp" class="admin-grid hidden">
@@ -741,7 +741,6 @@
       doc,
       addDoc,
       setDoc,
-      getDoc,
       updateDoc,
       deleteDoc,
       onSnapshot,
@@ -757,8 +756,6 @@
       appId: "1:1044833089599:web:30bd8a388601542768e08a"
     };
 
-    const DEFAULT_DIRECTOR_USERNAME = "director";
-    const DEFAULT_DIRECTOR_PASSWORD = "admin123";
     const GROUPS = [
       { id: "preschool", name: "Preschool staff" },
       { id: "elementary", name: "Elementary school staff" },
@@ -1232,20 +1229,6 @@
     }
 
     async function ensureDefaults() {
-      const directorRef = doc(state.db, "users", DEFAULT_DIRECTOR_USERNAME);
-      const directorSnap = await getDoc(directorRef);
-      if (!directorSnap.exists()) {
-        await setDoc(directorRef, {
-          name: "Director of HR",
-          username: DEFAULT_DIRECTOR_USERNAME,
-          role: "director",
-          groupIds: GROUPS.map((group) => group.id),
-          passwordHash: await sha256(DEFAULT_DIRECTOR_PASSWORD),
-          active: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-      }
       await setDoc(doc(state.db, "settings", "app"), {
         appName: "Staff Time Clock",
         groupIds: GROUPS.map((group) => group.id),
