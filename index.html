@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Maintenance Task Tracker</title>
+  <title>Staff Time Clock</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #f5f7fb;
       --panel: #ffffff;
       --ink: #17202a;
       --muted: #667085;
@@ -29,15 +29,13 @@
       color: var(--ink);
     }
 
-    button, input, select, textarea {
-      font: inherit;
-    }
+    button, input, select, textarea { font: inherit; }
 
     button {
-      border: 0;
-      cursor: pointer;
       min-height: 44px;
+      border: 0;
       border-radius: 8px;
+      cursor: pointer;
       font-weight: 750;
     }
 
@@ -52,11 +50,14 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 10px 12px;
-      color: var(--ink);
       background: #fff;
+      color: var(--ink);
     }
 
-    textarea { min-height: 88px; resize: vertical; }
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
 
     label {
       display: grid;
@@ -81,7 +82,7 @@
       justify-content: space-between;
       gap: 12px;
       padding: 12px clamp(14px, 3vw, 28px);
-      background: rgba(255,255,255,.94);
+      background: rgba(255, 255, 255, .94);
       border-bottom: 1px solid var(--line);
       backdrop-filter: blur(10px);
     }
@@ -140,7 +141,7 @@
     }
 
     .worker-wrap {
-      max-width: 1100px;
+      width: min(720px, 100%);
       margin: 0 auto;
       display: grid;
       gap: 20px;
@@ -154,9 +155,9 @@
 
     .hero h1 {
       margin: 0;
-      font-size: clamp(1.6rem, 5vw, 3.2rem);
-      letter-spacing: 0;
+      font-size: clamp(1.9rem, 6vw, 3.4rem);
       line-height: 1.05;
+      letter-spacing: 0;
     }
 
     .hero p {
@@ -165,25 +166,50 @@
       font-size: clamp(1rem, 2vw, 1.2rem);
     }
 
-    .name-grid {
+    .pin-panel {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
+      gap: 14px;
+      padding: clamp(18px, 3vw, 28px);
     }
 
-    .name-button {
-      min-height: 82px;
-      padding: 14px;
+    .pin-entry {
+      display: grid;
+      gap: 10px;
+    }
+
+    .pin-entry input {
+      min-height: 64px;
+      font-size: 2rem;
+      text-align: center;
+      letter-spacing: .2em;
+      font-weight: 850;
+    }
+
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .keypad button {
+      min-height: 78px;
       background: #fff;
-      border: 2px solid var(--line);
+      border: 1px solid var(--line);
       color: var(--ink);
-      text-align: left;
-      font-size: 1.08rem;
+      font-size: 1.55rem;
+      box-shadow: 0 6px 14px rgba(17, 24, 39, .06);
+      touch-action: manipulation;
+      user-select: none;
     }
 
-    .name-button.active {
-      border-color: var(--blue);
-      box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+    .keypad button:active {
+      transform: translateY(1px);
+      box-shadow: 0 3px 8px rgba(17, 24, 39, .08);
+    }
+
+    .keypad .keypad-action {
+      font-size: 1rem;
+      color: var(--muted);
     }
 
     .worker-actions {
@@ -193,19 +219,20 @@
     }
 
     .big-action {
-      min-height: 112px;
-      padding: 16px;
+      min-height: 148px;
+      padding: 18px;
       display: grid;
       align-content: center;
-      gap: 6px;
+      gap: 8px;
       text-align: center;
       color: #fff;
-      font-size: clamp(1rem, 3.3vw, 1.22rem);
+      font-size: clamp(1.25rem, 4vw, 1.8rem);
     }
 
     .big-action span:last-child {
+      font-size: .95rem;
       font-weight: 650;
-      opacity: .9;
+      opacity: .88;
     }
 
     .blue { background: var(--blue); color: #fff; }
@@ -226,6 +253,16 @@
       background: #eef6ff;
       color: #173b78;
       font-weight: 750;
+    }
+
+    .status-line.success {
+      background: #e7f6ec;
+      color: #116032;
+    }
+
+    .status-line.warning {
+      background: #fff7dc;
+      color: #854d0e;
     }
 
     .admin-grid {
@@ -259,7 +296,10 @@
       padding: clamp(16px, 2.6vw, 24px);
     }
 
-    .admin-section.active { display: grid; gap: 18px; }
+    .admin-section.active {
+      display: grid;
+      gap: 18px;
+    }
 
     .section-head {
       display: flex;
@@ -282,11 +322,36 @@
 
     .form-grid .full { grid-column: 1 / -1; }
 
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: center;
+      padding: 8px 0;
+    }
+
+    .check-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-weight: 700;
+    }
+
+    .check-option input {
+      width: auto;
+      min-height: auto;
+    }
+
     .table-wrap { overflow-x: auto; }
 
     table {
       width: 100%;
-      min-width: 700px;
+      min-width: 760px;
       border-collapse: collapse;
       background: #fff;
       border: 1px solid var(--line);
@@ -330,17 +395,19 @@
       white-space: nowrap;
     }
 
-    .pill.approved { background: #e7f6ec; color: #116032; }
+    .pill.in, .pill.confirmed { background: #e7f6ec; color: #116032; }
+    .pill.out { background: #ffe9e9; color: #9f2525; }
     .pill.pending { background: #fff7dc; color: #854d0e; }
-    .pill.denied { background: #ffe9e9; color: #9f2525; }
+    .pill.director { background: #e0ebff; color: #1d4ed8; }
+    .pill.supervisor { background: #eef2f7; color: var(--dark); }
 
     .cards {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
     }
 
-    .metric {
+    .metric, .review-card, .notice {
       padding: 16px;
       display: grid;
       gap: 8px;
@@ -382,30 +449,9 @@
       gap: 8px;
     }
 
-    .task-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .task-item {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      gap: 10px;
-      align-items: center;
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-    }
-
-    .time {
-      min-width: 72px;
-      font-weight: 850;
-      color: var(--blue);
-    }
-
     .muted { color: var(--muted); }
     .hidden { display: none !important; }
+    .director-only.hidden-by-role { display: none !important; }
 
     @media (max-width: 760px) {
       .topbar {
@@ -416,6 +462,7 @@
       .top-actions { justify-content: stretch; }
       .top-actions button { flex: 1 1 130px; }
 
+      .pin-entry,
       .worker-actions,
       .form-grid,
       .admin-grid {
@@ -427,9 +474,8 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .big-action { min-height: 98px; }
-      .task-item { grid-template-columns: 1fr; }
-      .time { min-width: 0; }
+      .big-action { min-height: 118px; }
+      .keypad button { min-height: 72px; }
     }
   </style>
 </head>
@@ -437,12 +483,12 @@
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <strong>Maintenance Task Tracker</strong>
-        <span>Shared Firestore schedule, clock log, and time-off board</span>
+        <strong>Staff Time Clock</strong>
+        <span>PIN clock-in, supervisor review, and HR oversight</span>
       </div>
       <div class="top-actions">
-        <button class="outline" id="workerViewBtn">Worker View</button>
-        <button class="dark" id="adminViewBtn">Admin Panel</button>
+        <button class="outline" id="workerViewBtn">Time Clock</button>
+        <button class="dark" id="adminViewBtn">HR Portal</button>
       </div>
     </header>
 
@@ -459,55 +505,85 @@
   messagingSenderId: "PASTE_SENDER_ID",
   appId: "PASTE_APP_ID"
 };</pre>
-          <p class="small">Firestore must be enabled for the project. The default admin password is <strong>admin123</strong>; change it from Settings after first login.</p>
+          <p class="small">Firestore must be enabled for the project. A default HR Director login is created automatically: username <strong>director</strong>, password <strong>admin123</strong>. Change it before daily use.</p>
         </div>
       </section>
 
       <section class="view active" id="workerView">
         <div class="worker-wrap">
           <div class="hero panel">
-            <h1>Select Your Name<br>Seleccione Su Nombre</h1>
-            <p>Clock in, clock out, request time off, and see today&apos;s assigned tasks.<br>Registre entrada, salida, solicite día libre y vea las tareas de hoy.</p>
+            <h1>Enter Your PIN</h1>
+            <p>Use your four-digit staff PIN to clock in or clock out.</p>
           </div>
-          <div class="status-line" id="workerStatus">Loading staff / Cargando personal...</div>
-          <div class="name-grid" id="workerGrid"></div>
-          <div class="worker-actions">
-            <button class="big-action green" id="clockInBtn" disabled>
-              <span>Clock In</span><span>Registrar Entrada</span>
-            </button>
-            <button class="big-action red" id="clockOutBtn" disabled>
-              <span>Clock Out</span><span>Registrar Salida</span>
-            </button>
-            <button class="big-action blue" id="timeOffBtn" disabled>
-              <span>Request Time Off</span><span>Solicitar Dia Libre</span>
-            </button>
-            <button class="big-action dark" id="tasksBtn" disabled>
-              <span>Tasks Assigned for Today</span><span>Tareas de Hoy</span>
-            </button>
+
+          <div class="pin-panel panel" id="pinPanel">
+            <div class="pin-entry">
+              <label>
+                Four-Digit PIN
+                <input id="pinInput" type="password" inputmode="none" autocomplete="off" maxlength="4" pattern="[0-9]*" placeholder="••••" readonly aria-label="Entered PIN digits">
+              </label>
+              <div class="keypad" aria-label="PIN number pad">
+                <button type="button" data-pin-key="1">1</button>
+                <button type="button" data-pin-key="2">2</button>
+                <button type="button" data-pin-key="3">3</button>
+                <button type="button" data-pin-key="4">4</button>
+                <button type="button" data-pin-key="5">5</button>
+                <button type="button" data-pin-key="6">6</button>
+                <button type="button" data-pin-key="7">7</button>
+                <button type="button" data-pin-key="8">8</button>
+                <button type="button" data-pin-key="9">9</button>
+                <button type="button" class="keypad-action" data-pin-key="clear">Clear</button>
+                <button type="button" data-pin-key="0">0</button>
+                <button type="button" class="keypad-action" data-pin-key="delete">Delete</button>
+              </div>
+            </div>
+            <div class="status-line" id="workerStatus">Enter your assigned PIN.</div>
+          </div>
+
+          <div class="pin-panel panel hidden" id="clockPanel">
+            <div>
+              <h2 id="workerNameHeading">Ready</h2>
+              <p class="small" id="workerGroupLabel"></p>
+            </div>
+            <div class="status-line" id="clockStatus">Choose an action.</div>
+            <div class="worker-actions">
+              <button class="big-action green" id="clockInBtn">
+                <span>Clock In</span>
+                <span id="clockInState">Start shift</span>
+              </button>
+              <button class="big-action red" id="clockOutBtn">
+                <span>Clock Out</span>
+                <span id="clockOutState">End shift</span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
       <section class="view" id="adminView">
         <div id="adminLogin" class="setup panel">
-          <h1>Admin Panel</h1>
-          <p class="small">Enter the admin password to manage staff, tasks, requests, and logs.</p>
+          <h1>HR Portal</h1>
+          <p class="small">Director and supervisor users can review records here. Supervisors only see staff in their assigned groups.</p>
+          <label>
+            Username
+            <input id="adminUsernameInput" autocomplete="username" placeholder="director">
+          </label>
           <label>
             Password
             <input id="adminPasswordInput" type="password" autocomplete="current-password">
           </label>
           <button class="blue" id="adminLoginBtn">Log In</button>
-          <p class="small">Default password: <strong>admin123</strong></p>
+          <p class="small">Default Director login: <strong>director</strong> / <strong>admin123</strong></p>
         </div>
 
         <div id="adminApp" class="admin-grid hidden">
           <nav class="admin-nav panel">
             <button class="plain active" data-admin-tab="dashboard">Dashboard</button>
-            <button class="plain" data-admin-tab="staff">Staff</button>
-            <button class="plain" data-admin-tab="tasks">Tasks</button>
-            <button class="plain" data-admin-tab="requests">Time Off</button>
-            <button class="plain" data-admin-tab="logs">Clock Logs</button>
-            <button class="plain" data-admin-tab="settings">Settings</button>
+            <button class="plain director-only" data-admin-tab="staff">Staff & PINs</button>
+            <button class="plain director-only" data-admin-tab="users">Supervisors</button>
+            <button class="plain" data-admin-tab="records">Time Records</button>
+            <button class="plain" data-admin-tab="reviews">Monthly Reviews</button>
+            <button class="plain" data-admin-tab="settings">Account Settings</button>
             <button class="outline" id="adminLogoutBtn">Log Out</button>
           </nav>
 
@@ -515,104 +591,117 @@
             <section class="admin-section active" id="dashboardSection">
               <div class="section-head">
                 <div>
-                  <h2>Daily Status</h2>
-                  <p class="small" id="todayLabel"></p>
+                  <h2>Dashboard</h2>
+                  <p class="small" id="adminIdentity"></p>
                 </div>
               </div>
               <div class="cards" id="metrics"></div>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr><th>Time</th><th>Task</th><th>Assigned To</th><th>Status</th></tr>
-                  </thead>
-                  <tbody id="dailyStatusRows"></tbody>
-                </table>
-              </div>
+              <div id="directorNotifications" class="director-only"></div>
             </section>
 
-            <section class="admin-section" id="staffSection">
+            <section class="admin-section director-only" id="staffSection">
               <div class="section-head">
                 <div>
-                  <h2>Maintenance Staff</h2>
-                  <p class="small">Add, edit, deactivate, or remove workers.</p>
+                  <h2>Staff & PINs</h2>
+                  <p class="small">Create staff, assign a group, and generate secure four-digit PINs.</p>
                 </div>
               </div>
               <form class="form-grid" id="staffForm">
                 <input type="hidden" id="staffId">
                 <label>Name<input id="staffName" required></label>
+                <label>Group<select id="staffGroup" required></select></label>
                 <label>Status
                   <select id="staffActive">
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </select>
                 </label>
+                <label>PIN<input id="staffPinPreview" readonly placeholder="Generated automatically"></label>
                 <button class="blue" type="submit" id="staffSubmit">Add Staff</button>
                 <button class="outline" type="button" id="staffCancel">Cancel Edit</button>
               </form>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Group</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody id="staffRows"></tbody>
                 </table>
               </div>
             </section>
 
-            <section class="admin-section" id="tasksSection">
+            <section class="admin-section director-only" id="usersSection">
               <div class="section-head">
                 <div>
-                  <h2>Daily Tasks</h2>
-                  <p class="small">Each task has a time and default assignee. Approved time off redistributes tasks for that day.</p>
+                  <h2>Supervisor Users</h2>
+                  <p class="small">Create HR supervisors and attach them to one or more staff groups.</p>
                 </div>
               </div>
-              <form class="form-grid" id="taskForm">
-                <input type="hidden" id="taskId">
-                <label>Time<input id="taskTime" type="time" required></label>
-                <label>Default Assignee<select id="taskAssignee" required></select></label>
-                <label>Task Name in English<input id="taskTitleEn" required placeholder="Clean entrance"></label>
-                <label>Spanish Translation<input id="taskTitleEs" readonly placeholder="Auto-translates for workers"></label>
+              <form class="form-grid" id="userForm">
+                <input type="hidden" id="userId">
+                <label>Name<input id="userName" required></label>
+                <label>Username<input id="userUsername" required autocomplete="off"></label>
+                <label>Password<input id="userPassword" type="password" minlength="6" placeholder="Required for new users"></label>
                 <label>Status
-                  <select id="taskActive">
+                  <select id="userActive">
                     <option value="true">Active</option>
                     <option value="false">Inactive</option>
                   </select>
                 </label>
-                <button class="blue" type="submit" id="taskSubmit">Add Task</button>
-                <button class="outline" type="button" id="taskCancel">Cancel Edit</button>
+                <div class="full">
+                  <label>Groups</label>
+                  <div class="check-grid" id="userGroupChecks"></div>
+                </div>
+                <button class="blue" type="submit" id="userSubmit">Add Supervisor</button>
+                <button class="outline" type="button" id="userCancel">Cancel Edit</button>
               </form>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Time</th><th>Task</th><th>Default Assignee</th><th>Status</th><th>Actions</th></tr></thead>
-                  <tbody id="taskRows"></tbody>
+                  <thead><tr><th>Name</th><th>Username</th><th>Groups</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="userRows"></tbody>
                 </table>
               </div>
             </section>
 
-            <section class="admin-section" id="requestsSection">
+            <section class="admin-section" id="recordsSection">
               <div class="section-head">
                 <div>
-                  <h2>Time-Off Requests</h2>
-                  <p class="small">Approved requests automatically rebalance that worker&apos;s tasks for the selected date.</p>
+                  <h2>Time Records</h2>
+                  <p class="small">Review and correct clock-in or clock-out entries for visible staff.</p>
                 </div>
+                <button class="blue" id="addRecordBtn">Add Manual Record</button>
+              </div>
+              <div class="form-grid">
+                <label>Month<input id="recordMonth" type="month"></label>
+                <label>Group<select id="recordGroup"></select></label>
+                <label>Staff Member<select id="recordStaff"></select></label>
+                <label>Record Type<select id="recordTypeFilter">
+                  <option value="">All Types</option>
+                  <option value="in">Clock In</option>
+                  <option value="out">Clock Out</option>
+                </select></label>
               </div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Date</th><th>Worker</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead>
-                  <tbody id="requestRows"></tbody>
-                </table>
-              </div>
-            </section>
-
-            <section class="admin-section" id="logsSection">
-              <div class="section-head">
-                <div>
-                  <h2>Clock-In / Clock-Out Log</h2>
-                  <p class="small">Newest entries appear first.</p>
-                </div>
-              </div>
-              <div class="table-wrap">
-                <table>
-                  <thead><tr><th>Date</th><th>Time</th><th>Worker</th><th>Type</th></tr></thead>
+                  <thead><tr><th>Date</th><th>Time</th><th>Staff</th><th>Group</th><th>Type</th><th>Source</th><th>Actions</th></tr></thead>
                   <tbody id="logRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="admin-section" id="reviewsSection">
+              <div class="section-head">
+                <div>
+                  <h2>Monthly Reviews</h2>
+                  <p class="small">Supervisors confirm each month after reviewing records. The HR Director is notified when confirmations are submitted.</p>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label>Review Month<input id="reviewMonth" type="month"></label>
+              </div>
+              <div class="cards" id="reviewCards"></div>
+              <div class="table-wrap director-only">
+                <table>
+                  <thead><tr><th>Supervisor</th><th>Group</th><th>Month</th><th>Status</th><th>Reviewed At</th></tr></thead>
+                  <tbody id="reviewRows"></tbody>
                 </table>
               </div>
             </section>
@@ -620,8 +709,8 @@
             <section class="admin-section" id="settingsSection">
               <div class="section-head">
                 <div>
-                  <h2>Settings</h2>
-                  <p class="small">Change the admin password after first setup.</p>
+                  <h2>Account Settings</h2>
+                  <p class="small">Change the password for the signed-in HR portal account.</p>
                 </div>
               </div>
               <form class="form-grid" id="passwordForm">
@@ -652,6 +741,7 @@
       doc,
       addDoc,
       setDoc,
+      getDoc,
       updateDoc,
       deleteDoc,
       onSnapshot,
@@ -667,36 +757,56 @@
       appId: "1:1044833089599:web:30bd8a388601542768e08a"
     };
 
-    const DEFAULT_PASSWORD = "admin123";
+    const DEFAULT_DIRECTOR_USERNAME = "director";
+    const DEFAULT_DIRECTOR_PASSWORD = "admin123";
+    const GROUPS = [
+      { id: "preschool", name: "Preschool staff" },
+      { id: "elementary", name: "Elementary school staff" },
+      { id: "other", name: "Other staff" }
+    ];
+
     const state = {
       db: null,
       configured: false,
-      adminAuthed: false,
-      selectedWorkerId: "",
+      worker: null,
+      hrUser: null,
       staff: [],
-      tasks: [],
-      requests: [],
+      users: [],
       logs: [],
-      completions: [],
-      settings: {}
+      reviews: [],
+      notifications: [],
+      settings: {},
+      activeAdminTab: "dashboard"
     };
 
     const $ = (id) => document.getElementById(id);
-    const todayKey = () => {
-      const now = new Date();
-      const offset = now.getTimezoneOffset();
-      return new Date(now.getTime() - offset * 60000).toISOString().slice(0, 10);
-    };
-    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[char]));
-    const formatTime = (time) => time || "--:--";
-    const nameFor = (id) => state.staff.find((person) => person.id === id)?.name || "Unassigned";
-    const activeStaff = () => state.staff.filter((person) => person.active !== false).sort((a, b) => a.name.localeCompare(b.name));
+    const todayKey = () => localDateParts().dateKey;
+    const monthKey = () => localDateParts().monthKey;
+
+    function localDateParts(ms = Date.now()) {
+      const date = new Date(ms);
+      const offset = date.getTimezoneOffset();
+      const local = new Date(date.getTime() - offset * 60000).toISOString();
+      return {
+        dateKey: local.slice(0, 10),
+        monthKey: local.slice(0, 7),
+        timeKey: local.slice(11, 16)
+      };
+    }
+
+    function msFromDateTime(dateKey, timeKey) {
+      return new Date(`${dateKey}T${timeKey || "00:00"}`).getTime();
+    }
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[char]));
+    }
 
     function isFirebaseConfigured() {
       return firebaseConfig.projectId && !firebaseConfig.projectId.startsWith("PASTE_");
@@ -706,6 +816,14 @@
       const data = new TextEncoder().encode(text);
       const hash = await crypto.subtle.digest("SHA-256", data);
       return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+
+    function groupName(groupId) {
+      return GROUPS.find((group) => group.id === groupId)?.name || "Unassigned";
+    }
+
+    function normalizeUsername(username) {
+      return username.trim().toLowerCase();
     }
 
     function showView(viewName) {
@@ -733,278 +851,406 @@
       return null;
     }
 
-    function latestLogFor(workerId, date = todayKey()) {
+    function formatDateTime(ms) {
+      const date = new Date(ms || Date.now());
+      return {
+        date: date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }),
+        time: date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+      };
+    }
+
+    function visibleGroupIds() {
+      if (!state.hrUser) return [];
+      if (state.hrUser.role === "director") return GROUPS.map((group) => group.id);
+      return state.hrUser.groupIds || [];
+    }
+
+    function canSeeGroup(groupId) {
+      return visibleGroupIds().includes(groupId);
+    }
+
+    function visibleStaff(options = {}) {
+      const includeInactive = options.includeInactive ?? true;
+      return state.staff
+        .filter((person) => includeInactive || person.active !== false)
+        .filter((person) => canSeeGroup(person.groupId || "other"))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
+
+    function activeStaff() {
+      return state.staff
+        .filter((person) => person.active !== false)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
+
+    function latestLogFor(staffId, date = todayKey()) {
       return state.logs
-        .filter((log) => log.workerId === workerId && log.dateKey === date)
+        .filter((log) => log.staffId === staffId && log.dateKey === date)
         .sort((a, b) => (b.localMs || 0) - (a.localMs || 0))[0];
     }
 
-    function workerClockedIn(workerId) {
-      return latestLogFor(workerId)?.type === "in";
+    function isClockedIn(staffId) {
+      return latestLogFor(staffId)?.type === "in";
     }
 
-    function approvedOffIds(date = todayKey()) {
-      return new Set(state.requests
-        .filter((request) => request.dateKey === date && request.status === "approved")
-        .map((request) => request.workerId));
-    }
-
-    function computedAssignments(date = todayKey()) {
-      const offIds = approvedOffIds(date);
-      const available = activeStaff().filter((person) => !offIds.has(person.id));
-      const activeTasks = state.tasks
-        .filter((task) => task.active !== false)
-        .sort((a, b) => String(a.time).localeCompare(String(b.time)));
-
-      const assignments = [];
-      const displaced = [];
-      activeTasks.forEach((task) => {
-        const defaultWorker = state.staff.find((person) => person.id === task.defaultAssigneeId);
-        if (defaultWorker && defaultWorker.active !== false && !offIds.has(defaultWorker.id)) {
-          assignments.push({ task, workerId: defaultWorker.id, redistributed: false });
-        } else {
-          displaced.push(task);
-        }
-      });
-
-      displaced.forEach((task, index) => {
-        assignments.push({
-          task,
-          workerId: available[index % Math.max(available.length, 1)]?.id || "",
-          redistributed: true
-        });
-      });
-
-      return assignments.sort((a, b) => String(a.task.time).localeCompare(String(b.task.time)));
-    }
-
-    function tasksForWorker(workerId, date = todayKey()) {
-      return computedAssignments(date).filter((item) => item.workerId === workerId);
-    }
-
-    function completionFor(taskId, workerId, date = todayKey()) {
-      return state.completions.find((item) => item.taskId === taskId && item.workerId === workerId && item.dateKey === date);
-    }
-
-    function fallbackSpanishTranslation(text) {
-      const phrases = [
-        ["bathrooms", "banos"],
-        ["bathroom", "bano"],
-        ["restrooms", "banos"],
-        ["restroom", "bano"],
-        ["cafeteria", "cafeteria"],
-        ["classroom", "salon"],
-        ["classrooms", "salones"],
-        ["hallway", "pasillo"],
-        ["hallways", "pasillos"],
-        ["entrance", "entrada"],
-        ["office", "oficina"],
-        ["trash", "basura"],
-        ["garbage", "basura"],
-        ["floors", "pisos"],
-        ["floor", "piso"],
-        ["windows", "ventanas"],
-        ["window", "ventana"],
-        ["doors", "puertas"],
-        ["door", "puerta"],
-        ["sink", "lavamanos"],
-        ["sinks", "lavamanos"],
-        ["toilets", "inodoros"],
-        ["toilet", "inodoro"],
-        ["lights", "luces"],
-        ["light", "luz"],
-        ["clean", "limpiar"],
-        ["sanitize", "desinfectar"],
-        ["sweep", "barrer"],
-        ["mop", "trapear"],
-        ["vacuum", "aspirar"],
-        ["empty", "vaciar"],
-        ["replace", "reemplazar"],
-        ["refill", "rellenar"],
-        ["check", "revisar"],
-        ["inspect", "inspeccionar"],
-        ["repair", "reparar"],
-        ["set up", "preparar"],
-        ["take down", "guardar"],
-        ["pick up", "recoger"],
-        ["wipe", "limpiar"]
-      ];
-      let translated = ` ${text.toLowerCase()} `;
-      phrases.forEach(([english, spanish]) => {
-        translated = translated.replaceAll(` ${english} `, ` ${spanish} `);
-      });
-      return translated.trim().replace(/^\w/, (char) => char.toUpperCase());
-    }
-
-    async function translateTaskTitle(text) {
-      const source = text.trim();
-      if (!source) return "";
-      try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(source)}&langpair=en|es`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Translation service unavailable");
-        const data = await response.json();
-        const translated = data?.responseData?.translatedText?.trim();
-        if (translated) return translated;
-      } catch (error) {
-        console.warn("Using fallback Spanish task translation.", error);
+    function generatePin(excludeStaffId = "") {
+      const used = new Set(state.staff.filter((person) => person.id !== excludeStaffId).map((person) => String(person.pin || "")));
+      for (let attempts = 0; attempts < 1000; attempts += 1) {
+        const pin = String(Math.floor(1000 + Math.random() * 9000));
+        if (!used.has(pin)) return pin;
       }
-      return fallbackSpanishTranslation(source);
+      throw new Error("Unable to generate a unique PIN. Too many active PINs exist.");
     }
 
-    let translationTimer = null;
-    function scheduleTaskTitleTranslation() {
-      clearTimeout(translationTimer);
-      translationTimer = setTimeout(async () => {
-        const englishTitle = $("taskTitleEn").value.trim();
-        $("taskTitleEs").value = englishTitle ? "Translating..." : "";
-        $("taskTitleEs").value = await translateTaskTitle(englishTitle);
-      }, 450);
+    function showWorkerLogin(message = "Enter your assigned PIN.", kind = "") {
+      state.worker = null;
+      $("pinPanel").classList.remove("hidden");
+      $("clockPanel").classList.add("hidden");
+      $("pinInput").value = "";
+      $("workerStatus").textContent = message;
+      $("workerStatus").className = `status-line ${kind}`.trim();
+      $("pinInput").focus();
     }
 
-    function updateWorkerUi() {
-      const people = activeStaff();
-      $("workerGrid").innerHTML = people.length ? people.map((person) => `
-        <button class="name-button ${person.id === state.selectedWorkerId ? "active" : ""}" data-worker-id="${person.id}">
-          ${esc(person.name)}
-        </button>
-      `).join("") : `<p class="muted">No active staff yet / No hay personal activo todavia.</p>`;
-
-      const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
-      const hasWorker = Boolean(worker);
-      const clockedIn = hasWorker && workerClockedIn(worker.id);
-      $("clockInBtn").disabled = !hasWorker || clockedIn;
-      $("clockOutBtn").disabled = !hasWorker || !clockedIn;
-      $("timeOffBtn").disabled = !hasWorker;
-      $("tasksBtn").disabled = !hasWorker;
-      $("workerStatus").textContent = hasWorker
-        ? `${worker.name}: ${clockedIn ? "Clocked in / Entrada registrada" : "Not clocked in / Entrada no registrada"}`
-        : "Select your name / Seleccione su nombre";
+    function showWorkerClock(person) {
+      state.worker = person;
+      $("pinPanel").classList.add("hidden");
+      $("clockPanel").classList.remove("hidden");
+      $("workerNameHeading").textContent = person.name;
+      $("workerGroupLabel").textContent = groupName(person.groupId || "other");
+      updateClockPanel();
     }
 
-    function renderAssigneeOptions() {
-      const options = activeStaff().map((person) => `<option value="${person.id}">${esc(person.name)}</option>`).join("");
-      $("taskAssignee").innerHTML = options || `<option value="">Add staff first</option>`;
+    function updateClockPanel() {
+      const worker = state.worker;
+      if (!worker) return;
+      const clockedIn = isClockedIn(worker.id);
+      $("clockInBtn").disabled = clockedIn;
+      $("clockOutBtn").disabled = !clockedIn;
+      $("clockInState").textContent = clockedIn ? "Already clocked in" : "Start shift";
+      $("clockOutState").textContent = clockedIn ? "End shift" : "Not clocked in";
+      $("clockStatus").textContent = `${worker.name} is ${clockedIn ? "clocked in" : "not clocked in"}.`;
+      $("clockStatus").className = `status-line ${clockedIn ? "success" : ""}`.trim();
     }
 
-    function updateAdminUi() {
-      renderAssigneeOptions();
-      renderMetrics();
+    function renderGroupSelect(selectId, options = {}) {
+      const groups = options.visibleOnly ? GROUPS.filter((group) => canSeeGroup(group.id)) : GROUPS;
+      const placeholder = options.placeholder ? `<option value="">${esc(options.placeholder)}</option>` : "";
+      const current = $(selectId).value;
+      $(selectId).innerHTML = placeholder + groups.map((group) => `<option value="${group.id}">${esc(group.name)}</option>`).join("");
+      if ([...$(selectId).options].some((option) => option.value === current)) $(selectId).value = current;
+    }
+
+    function renderStaffSelect(selectId, options = {}) {
+      const people = visibleStaff({ includeInactive: false });
+      const placeholder = options.placeholder ? `<option value="">${esc(options.placeholder)}</option>` : "";
+      const current = $(selectId).value;
+      $(selectId).innerHTML = placeholder + people.map((person) => `<option value="${person.id}">${esc(person.name)}</option>`).join("");
+      if ([...$(selectId).options].some((option) => option.value === current)) $(selectId).value = current;
+    }
+
+    function renderUserGroupChecks(selected = []) {
+      $("userGroupChecks").innerHTML = GROUPS.map((group) => `
+        <label class="check-option">
+          <input type="checkbox" name="userGroup" value="${group.id}" ${selected.includes(group.id) ? "checked" : ""}>
+          <span>${esc(group.name)}</span>
+        </label>
+      `).join("");
+    }
+
+    function selectedUserGroups() {
+      return [...document.querySelectorAll("input[name='userGroup']:checked")].map((input) => input.value);
+    }
+
+    function applyRoleVisibility() {
+      const isDirector = state.hrUser?.role === "director";
+      document.querySelectorAll(".director-only").forEach((item) => {
+        item.classList.toggle("hidden-by-role", !isDirector);
+      });
+      if (!isDirector && ["staff", "users"].includes(state.activeAdminTab)) state.activeAdminTab = "records";
+      document.querySelectorAll("[data-admin-tab]").forEach((button) => button.classList.toggle("active", button.dataset.adminTab === state.activeAdminTab));
+      document.querySelectorAll(".admin-section").forEach((section) => section.classList.remove("active"));
+      $(`${state.activeAdminTab}Section`).classList.add("active");
+    }
+
+    function renderAdminUi() {
+      if (!state.hrUser) return;
+      applyRoleVisibility();
+      renderDashboard();
+      renderStaffControls();
       renderStaffRows();
-      renderTaskRows();
-      renderRequestRows();
+      renderUserRows();
+      renderRecordFilters();
       renderLogRows();
-      renderDailyStatus();
+      renderReviews();
     }
 
-    function renderMetrics() {
-      const date = todayKey();
-      const assignments = computedAssignments(date);
-      const completed = assignments.filter((item) => completionFor(item.task.id, item.workerId, date)).length;
-      const pendingRequests = state.requests.filter((request) => request.status === "pending").length;
-      const clockedIn = activeStaff().filter((person) => workerClockedIn(person.id)).length;
-      $("todayLabel").textContent = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    function renderDashboard() {
+      const groups = visibleGroupIds();
+      const people = visibleStaff({ includeInactive: false });
+      const month = $("reviewMonth").value || monthKey();
+      const visibleLogs = filteredLogs({ monthKey: month, skipType: true, skipStaff: true, skipGroup: true });
+      const clockedIn = people.filter((person) => isClockedIn(person.id)).length;
+      const supervisors = state.users.filter((user) => user.role === "supervisor" && user.active !== false);
+      const expectedReviews = state.hrUser.role === "director"
+        ? supervisors.reduce((count, user) => count + (user.groupIds || []).length, 0)
+        : groups.length;
+      const completedReviews = state.hrUser.role === "director"
+        ? state.reviews.filter((review) => review.monthKey === month).length
+        : state.reviews.filter((review) => review.monthKey === month && review.supervisorId === state.hrUser.id).length;
+
+      $("adminIdentity").textContent = `${state.hrUser.name} · ${state.hrUser.role === "director" ? "Director of HR" : `Supervisor for ${groups.map(groupName).join(", ")}`}`;
       $("metrics").innerHTML = `
-        <div class="metric"><span class="small">Active Staff</span><strong>${activeStaff().length}</strong></div>
+        <div class="metric"><span class="small">Visible Active Staff</span><strong>${people.length}</strong></div>
         <div class="metric"><span class="small">Clocked In Now</span><strong>${clockedIn}</strong></div>
-        <div class="metric"><span class="small">Tasks Complete</span><strong>${completed}/${assignments.length}</strong></div>
-        <div class="metric"><span class="small">Pending Time Off</span><strong>${pendingRequests}</strong></div>
+        <div class="metric"><span class="small">Records This Month</span><strong>${visibleLogs.length}</strong></div>
+        <div class="metric"><span class="small">Monthly Reviews</span><strong>${completedReviews}/${expectedReviews || 0}</strong></div>
       `;
+
+      if (state.hrUser.role !== "director") {
+        $("directorNotifications").innerHTML = "";
+        return;
+      }
+
+      const notices = state.notifications
+        .filter((notice) => notice.forRole === "director")
+        .sort((a, b) => (b.localMs || 0) - (a.localMs || 0))
+        .slice(0, 6);
+
+      $("directorNotifications").innerHTML = `
+        <div class="section-head">
+          <div>
+            <h2>Director Notifications</h2>
+            <p class="small">Latest supervisor review confirmations.</p>
+          </div>
+        </div>
+        <div class="cards">
+          ${notices.map((notice) => `
+            <div class="notice">
+              <strong>${esc(notice.title || "Monthly review confirmed")}</strong>
+              <span>${esc(notice.message || "")}</span>
+              <span class="small">${esc(notice.monthKey || "")}${notice.read ? " · Read" : " · Unread"}</span>
+              ${notice.read ? "" : `<button class="outline" data-read-notice="${notice.id}">Mark Read</button>`}
+            </div>
+          `).join("") || `<div class="notice"><span class="muted">No notifications yet.</span></div>`}
+        </div>
+      `;
+    }
+
+    function renderStaffControls() {
+      renderGroupSelect("staffGroup");
+      renderUserGroupChecks(selectedUserGroups());
     }
 
     function renderStaffRows() {
       $("staffRows").innerHTML = state.staff
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
         .map((person) => `
           <tr>
             <td>${esc(person.name)}</td>
+            <td>${esc(groupName(person.groupId || "other"))}</td>
+            <td><strong>${esc(person.pin || "Missing")}</strong></td>
             <td><span class="pill">${person.active === false ? "Inactive" : "Active"}</span></td>
             <td>
               <div class="row-actions">
                 <button class="outline" data-edit-staff="${person.id}">Edit</button>
+                <button class="outline" data-pin-staff="${person.id}">Regenerate PIN</button>
                 <button class="outline" data-toggle-staff="${person.id}">${person.active === false ? "Activate" : "Deactivate"}</button>
                 <button class="red" data-delete-staff="${person.id}">Remove</button>
               </div>
             </td>
           </tr>
-        `).join("") || `<tr><td colspan="3">No staff added yet.</td></tr>`;
+        `).join("") || `<tr><td colspan="5">No staff added yet.</td></tr>`;
     }
 
-    function renderTaskRows() {
-      $("taskRows").innerHTML = state.tasks
-        .sort((a, b) => String(a.time).localeCompare(String(b.time)))
-        .map((task) => `
+    function renderUserRows() {
+      $("userRows").innerHTML = state.users
+        .filter((user) => user.role === "supervisor")
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .map((user) => `
           <tr>
-            <td>${esc(formatTime(task.time))}</td>
-            <td>${esc(task.titleEn)}${task.titleEs ? `<br><span class="small">${esc(task.titleEs)}</span>` : ""}</td>
-            <td>${esc(nameFor(task.defaultAssigneeId))}</td>
-            <td><span class="pill">${task.active === false ? "Inactive" : "Active"}</span></td>
+            <td>${esc(user.name)}</td>
+            <td>${esc(user.username)}</td>
+            <td>${esc((user.groupIds || []).map(groupName).join(", ") || "No groups")}</td>
+            <td><span class="pill supervisor">${user.active === false ? "Inactive" : "Active"}</span></td>
             <td>
               <div class="row-actions">
-                <button class="outline" data-edit-task="${task.id}">Edit</button>
-                <button class="red" data-delete-task="${task.id}">Remove</button>
+                <button class="outline" data-edit-user="${user.id}">Edit</button>
+                <button class="outline" data-toggle-user="${user.id}">${user.active === false ? "Activate" : "Deactivate"}</button>
+                <button class="red" data-delete-user="${user.id}">Remove</button>
               </div>
             </td>
           </tr>
-        `).join("") || `<tr><td colspan="5">No tasks created yet.</td></tr>`;
+        `).join("") || `<tr><td colspan="5">No supervisor users created yet.</td></tr>`;
     }
 
-    function renderRequestRows() {
-      $("requestRows").innerHTML = state.requests
-        .sort((a, b) => String(b.dateKey).localeCompare(String(a.dateKey)) || String(a.status).localeCompare(String(b.status)))
-        .map((request) => `
-          <tr>
-            <td>${esc(request.dateKey)}</td>
-            <td>${esc(nameFor(request.workerId))}</td>
-            <td>${esc(request.reason || "")}</td>
-            <td><span class="pill ${esc(request.status)}">${esc(request.status)}</span></td>
-            <td>
-              <div class="row-actions">
-                <button class="green" data-request-status="${request.id}:approved">Approve</button>
-                <button class="red" data-request-status="${request.id}:denied">Deny</button>
-                <button class="outline" data-request-status="${request.id}:pending">Mark Pending</button>
-              </div>
-            </td>
-          </tr>
-        `).join("") || `<tr><td colspan="5">No time-off requests yet.</td></tr>`;
+    function renderRecordFilters() {
+      if (!$("recordMonth").value) $("recordMonth").value = monthKey();
+      renderGroupSelect("recordGroup", { visibleOnly: true, placeholder: "All Visible Groups" });
+      renderStaffSelect("recordStaff", { placeholder: "All Visible Staff" });
+    }
+
+    function filteredLogs(options = {}) {
+      const month = options.monthKey ?? $("recordMonth").value;
+      const groupId = options.skipGroup ? "" : $("recordGroup").value;
+      const staffId = options.skipStaff ? "" : $("recordStaff").value;
+      const type = options.skipType ? "" : $("recordTypeFilter").value;
+      return state.logs
+        .filter((log) => canSeeGroup(log.groupId || "other"))
+        .filter((log) => !month || log.monthKey === month || String(log.dateKey || "").startsWith(month))
+        .filter((log) => !groupId || (log.groupId || "other") === groupId)
+        .filter((log) => !staffId || log.staffId === staffId)
+        .filter((log) => !type || log.type === type)
+        .sort((a, b) => (b.localMs || 0) - (a.localMs || 0));
     }
 
     function renderLogRows() {
-      $("logRows").innerHTML = state.logs
-        .sort((a, b) => (b.localMs || 0) - (a.localMs || 0))
-        .slice(0, 150)
+      const rows = filteredLogs()
+        .slice(0, 300)
         .map((log) => {
-          const date = timestampToDate(log.timestamp) || timestampToDate(log.localMs) || new Date(log.localMs || Date.now());
+          const when = formatDateTime(log.localMs || Date.now());
+          const amended = log.amended ? `<br><span class="small">Amended by ${esc(log.amendedByName || "HR")}</span>` : "";
           return `
             <tr>
-              <td>${esc(log.dateKey)}</td>
-              <td>${esc(date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}</td>
-              <td>${esc(log.workerName || nameFor(log.workerId))}</td>
-              <td><span class="pill">${log.type === "in" ? "Clock In" : "Clock Out"}</span></td>
+              <td>${esc(log.dateKey || when.date)}</td>
+              <td>${esc(when.time)}</td>
+              <td>${esc(log.staffName || staffName(log.staffId))}</td>
+              <td>${esc(groupName(log.groupId || "other"))}</td>
+              <td><span class="pill ${esc(log.type)}">${log.type === "in" ? "Clock In" : "Clock Out"}</span></td>
+              <td>${esc(log.source === "manual" ? "Manual" : "PIN")}${amended}</td>
+              <td><button class="outline" data-edit-log="${log.id}">Amend</button></td>
             </tr>
           `;
-        }).join("") || `<tr><td colspan="4">No clock logs yet.</td></tr>`;
+        }).join("");
+      $("logRows").innerHTML = rows || `<tr><td colspan="7">No records match the current filters.</td></tr>`;
     }
 
-    function renderDailyStatus() {
-      const date = todayKey();
-      const rows = computedAssignments(date).map(({ task, workerId, redistributed }) => {
-        const done = completionFor(task.id, workerId, date);
-        return `
-          <tr>
-            <td>${esc(formatTime(task.time))}</td>
-            <td>${esc(task.titleEn)}${redistributed ? `<br><span class="small">Redistributed from ${esc(nameFor(task.defaultAssigneeId))}</span>` : ""}</td>
-            <td>${esc(nameFor(workerId))}</td>
-            <td><span class="pill ${done ? "approved" : "pending"}">${done ? "Complete" : "Pending"}</span></td>
-          </tr>
+    function staffName(staffId) {
+      return state.staff.find((person) => person.id === staffId)?.name || "Unknown staff";
+    }
+
+    function renderReviews() {
+      if (!$("reviewMonth").value) $("reviewMonth").value = monthKey();
+      const month = $("reviewMonth").value;
+      const isDirector = state.hrUser?.role === "director";
+      const supervisors = isDirector
+        ? state.users.filter((user) => user.role === "supervisor" && user.active !== false)
+        : [state.hrUser];
+
+      if (isDirector) {
+        $("reviewCards").innerHTML = `
+          <div class="review-card">
+            <strong>Director View</strong>
+            <span class="small">Review confirmations for ${esc(month)} are listed below by supervisor and group.</span>
+          </div>
         `;
-      }).join("");
-      $("dailyStatusRows").innerHTML = rows || `<tr><td colspan="4">No active tasks today.</td></tr>`;
+      } else {
+        $("reviewCards").innerHTML = visibleGroupIds().map((groupId) => {
+          const review = reviewFor(month, state.hrUser.id, groupId);
+          const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
+          return `
+            <div class="review-card">
+              <strong>${esc(groupName(groupId))}</strong>
+              <span>${review ? "Records reviewed and confirmed." : "Review pending."}</span>
+              <span class="small">${reviewedAt ? reviewedAt.toLocaleString() : `Month: ${esc(month)}`}</span>
+              <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Confirm Again" : "Confirm Reviewed"}</button>
+            </div>
+          `;
+        }).join("") || `<div class="review-card"><span class="muted">No groups assigned to this supervisor.</span></div>`;
+      }
+
+      const rows = supervisors.flatMap((user) => (user.groupIds || []).map((groupId) => ({ user, groupId })))
+        .map(({ user, groupId }) => {
+          const review = reviewFor(month, user.id, groupId);
+          const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
+          return `
+            <tr>
+              <td>${esc(user.name)}</td>
+              <td>${esc(groupName(groupId))}</td>
+              <td>${esc(month)}</td>
+              <td><span class="pill ${review ? "confirmed" : "pending"}">${review ? "Confirmed" : "Pending"}</span></td>
+              <td>${reviewedAt ? esc(reviewedAt.toLocaleString()) : ""}</td>
+            </tr>
+          `;
+        }).join("");
+      $("reviewRows").innerHTML = rows || `<tr><td colspan="5">No supervisor review assignments found.</td></tr>`;
     }
 
-    function renderAll() {
-      updateWorkerUi();
-      updateAdminUi();
+    function reviewFor(month, supervisorId, groupId) {
+      return state.reviews.find((review) => review.monthKey === month && review.supervisorId === supervisorId && review.groupId === groupId);
+    }
+
+    function setAdminTab(tab) {
+      state.activeAdminTab = tab;
+      document.querySelectorAll("[data-admin-tab]").forEach((button) => button.classList.toggle("active", button.dataset.adminTab === tab));
+      document.querySelectorAll(".admin-section").forEach((section) => section.classList.remove("active"));
+      $(`${tab}Section`).classList.add("active");
+      renderAdminUi();
+    }
+
+    function resetStaffForm() {
+      $("staffId").value = "";
+      $("staffName").value = "";
+      $("staffGroup").value = "preschool";
+      $("staffActive").value = "true";
+      $("staffPinPreview").value = "";
+      $("staffSubmit").textContent = "Add Staff";
+    }
+
+    function resetUserForm() {
+      $("userId").value = "";
+      $("userName").value = "";
+      $("userUsername").value = "";
+      $("userUsername").readOnly = false;
+      $("userPassword").value = "";
+      $("userPassword").required = true;
+      $("userActive").value = "true";
+      renderUserGroupChecks([]);
+      $("userSubmit").textContent = "Add Supervisor";
+    }
+
+    function recordForm(log = null) {
+      const person = log ? state.staff.find((item) => item.id === log.staffId) : visibleStaff({ includeInactive: false })[0];
+      const parts = localDateParts(log?.localMs || Date.now());
+      const dateKey = log?.dateKey || parts.dateKey;
+      const timeKey = log?.localMs ? localDateParts(log.localMs).timeKey : parts.timeKey;
+      return `
+        <form id="recordForm" class="form-grid">
+          <input type="hidden" id="recordId" value="${esc(log?.id || "")}">
+          <label>Date<input id="recordDateEdit" type="date" value="${esc(dateKey)}" required></label>
+          <label>Time<input id="recordTimeEdit" type="time" value="${esc(timeKey)}" required></label>
+          <label>Staff Member<select id="recordStaffEdit" required>
+            ${visibleStaff({ includeInactive: false }).map((staff) => `<option value="${staff.id}" ${staff.id === person?.id ? "selected" : ""}>${esc(staff.name)}</option>`).join("")}
+          </select></label>
+          <label>Type<select id="recordTypeEdit" required>
+            <option value="in" ${log?.type === "in" ? "selected" : ""}>Clock In</option>
+            <option value="out" ${log?.type === "out" ? "selected" : ""}>Clock Out</option>
+          </select></label>
+          <label class="full">Correction Note<textarea id="recordNoteEdit" placeholder="Why is this record being amended?">${esc(log?.amendmentNote || "")}</textarea></label>
+        </form>
+      `;
+    }
+
+    async function ensureDefaults() {
+      const directorRef = doc(state.db, "users", DEFAULT_DIRECTOR_USERNAME);
+      const directorSnap = await getDoc(directorRef);
+      if (!directorSnap.exists()) {
+        await setDoc(directorRef, {
+          name: "Director of HR",
+          username: DEFAULT_DIRECTOR_USERNAME,
+          role: "director",
+          groupIds: GROUPS.map((group) => group.id),
+          passwordHash: await sha256(DEFAULT_DIRECTOR_PASSWORD),
+          active: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+      await setDoc(doc(state.db, "settings", "app"), {
+        appName: "Staff Time Clock",
+        groupIds: GROUPS.map((group) => group.id),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
     }
 
     function listenToCollection(key, collectionName) {
@@ -1014,9 +1260,9 @@
       }, (error) => alert(`Firestore error in ${collectionName}: ${error.message}`));
     }
 
-    async function ensureSettings() {
-      const passwordHash = await sha256(DEFAULT_PASSWORD);
-      await setDoc(doc(state.db, "settings", "app"), { passwordHash, updatedAt: serverTimestamp() }, { merge: true });
+    function renderAll() {
+      updateClockPanel();
+      renderAdminUi();
     }
 
     async function boot() {
@@ -1027,116 +1273,150 @@
 
       state.configured = true;
       state.db = getFirestore(initializeApp(firebaseConfig));
-      onSnapshot(doc(state.db, "settings", "app"), async (snapshot) => {
-        if (snapshot.exists()) {
-          state.settings = snapshot.data();
-        } else {
-          await ensureSettings();
-        }
+      await ensureDefaults();
+      onSnapshot(doc(state.db, "settings", "app"), (snapshot) => {
+        state.settings = snapshot.exists() ? snapshot.data() : {};
       });
       listenToCollection("staff", "staff");
-      listenToCollection("tasks", "tasks");
-      listenToCollection("requests", "timeOffRequests");
+      listenToCollection("users", "users");
       listenToCollection("logs", "clockLogs");
-      listenToCollection("completions", "taskCompletions");
+      listenToCollection("reviews", "monthlyReviews");
+      listenToCollection("notifications", "notifications");
+      renderGroupSelect("staffGroup");
+      renderGroupSelect("recordGroup", { visibleOnly: true, placeholder: "All Visible Groups" });
+      resetUserForm();
+      resetStaffForm();
+      $("recordMonth").value = monthKey();
+      $("reviewMonth").value = monthKey();
       showView("worker");
     }
 
+    function setPinValue(value) {
+      $("pinInput").value = value.replace(/\D/g, "").slice(0, 4);
+    }
+
+    async function handlePinKey(key) {
+      if (key === "clear") {
+        setPinValue("");
+        $("workerStatus").textContent = "Enter your assigned PIN.";
+        $("workerStatus").className = "status-line";
+        return;
+      }
+      if (key === "delete") {
+        setPinValue($("pinInput").value.slice(0, -1));
+        return;
+      }
+      if (/^\d$/.test(key) && $("pinInput").value.length < 4) {
+        setPinValue(`${$("pinInput").value}${key}`);
+      }
+      if ($("pinInput").value.length === 4) await workerLogin();
+    }
+
+    async function workerLogin() {
+      const pin = $("pinInput").value.replace(/\D/g, "");
+      if (pin.length !== 4) {
+        $("workerStatus").textContent = "Enter a valid four-digit PIN.";
+        $("workerStatus").className = "status-line warning";
+        return;
+      }
+      const person = state.staff.find((staff) => staff.active !== false && String(staff.pin) === pin);
+      if (!person) {
+        $("workerStatus").textContent = "PIN not found. Please try again or ask HR for help.";
+        $("workerStatus").className = "status-line warning";
+        return;
+      }
+      showWorkerClock(person);
+    }
+
     async function clock(type) {
-      const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
+      const worker = state.worker;
       if (!worker) return;
+      const parts = localDateParts();
       await addDoc(collection(state.db, "clockLogs"), {
-        workerId: worker.id,
-        workerName: worker.name,
+        staffId: worker.id,
+        staffName: worker.name,
+        groupId: worker.groupId || "other",
         type,
-        dateKey: todayKey(),
+        dateKey: parts.dateKey,
+        monthKey: parts.monthKey,
         localMs: Date.now(),
+        source: "pin",
         timestamp: serverTimestamp()
       });
+      $("clockStatus").textContent = `${type === "in" ? "Clock in" : "Clock out"} recorded for ${worker.name}.`;
+      $("clockStatus").className = "status-line success";
+      setTimeout(() => showWorkerLogin("Recorded. Enter your PIN for the next action.", "success"), 1400);
     }
 
-    function showTimeOffModal() {
-      const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
-      if (!worker) return;
-      openModal(
-        "Request Time Off / Solicitar Dia Libre",
-        `<form id="timeOffForm" class="form-grid">
-          <label>Date / Fecha<input id="timeOffDate" type="date" value="${todayKey()}" required></label>
-          <label class="full">Reason / Razon<textarea id="timeOffReason" placeholder="Optional / Opcional"></textarea></label>
-        </form>`,
-        `<button class="outline" id="modalCancel">Cancel / Cancelar</button><button class="blue" id="submitTimeOff">Submit / Enviar</button>`
-      );
+    async function saveRecordFromModal() {
+      const id = $("recordId").value;
+      const staff = state.staff.find((person) => person.id === $("recordStaffEdit").value);
+      if (!staff || !canSeeGroup(staff.groupId || "other")) {
+        alert("You cannot create or amend records for that staff member.");
+        return;
+      }
+      const localMs = msFromDateTime($("recordDateEdit").value, $("recordTimeEdit").value);
+      const parts = localDateParts(localMs);
+      const payload = {
+        staffId: staff.id,
+        staffName: staff.name,
+        groupId: staff.groupId || "other",
+        type: $("recordTypeEdit").value,
+        dateKey: parts.dateKey,
+        monthKey: parts.monthKey,
+        localMs,
+        amendmentNote: $("recordNoteEdit").value.trim(),
+        amended: true,
+        amendedAt: serverTimestamp(),
+        amendedBy: state.hrUser.id,
+        amendedByName: state.hrUser.name
+      };
+
+      if (id) {
+        const original = state.logs.find((log) => log.id === id);
+        await updateDoc(doc(state.db, "clockLogs", id), {
+          ...payload,
+          originalLocalMs: original?.originalLocalMs || original?.localMs || null
+        });
+      } else {
+        await addDoc(collection(state.db, "clockLogs"), {
+          ...payload,
+          source: "manual",
+          createdAt: serverTimestamp(),
+          createdBy: state.hrUser.id,
+          createdByName: state.hrUser.name
+        });
+      }
+      closeModal();
     }
 
-    function showTasksModal(options = {}) {
-      const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
-      if (!worker) return;
-      const date = todayKey();
-      const tasks = tasksForWorker(worker.id, date);
-      const welcome = options.welcome ? `
-        <div class="status-line">
-          Welcome! Here is your schedule for the day.<br>
-          ¡Bienvenido! Aquí está su horario del día.
-        </div>
-      ` : "";
-      const body = tasks.length ? `
-        ${welcome}
-        <div class="task-list">
-          ${tasks.map(({ task, redistributed }) => {
-            const done = completionFor(task.id, worker.id, date);
-            return `
-              <div class="task-item">
-                <div class="time">${esc(formatTime(task.time))}</div>
-                <div>
-                  <strong>${esc(task.titleEn)}</strong><br>
-                  <span class="muted">${esc(task.titleEs || task.titleEn)}</span>
-                  ${redistributed ? `<br><span class="small">Reassigned today / Reasignada hoy</span>` : ""}
-                </div>
-                <button class="${done ? "outline" : "green"}" data-complete-task="${task.id}" ${done ? "disabled" : ""}>
-                  ${done ? "Complete / Completa" : "Mark Complete / Marcar Completa"}
-                </button>
-              </div>
-            `;
-          }).join("")}
-        </div>` : `${welcome}<p>No tasks assigned today / No tiene tareas asignadas hoy.</p>`;
-      openModal(`Tasks for ${worker.name} / Tareas de ${worker.name}`, body, `<button class="blue" id="modalCancel">Close / Cerrar</button>`);
-    }
-
-    async function markTaskComplete(taskId) {
-      const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
-      if (!worker) return;
-      const date = todayKey();
-      await setDoc(doc(state.db, "taskCompletions", `${date}_${taskId}_${worker.id}`), {
-        dateKey: date,
-        taskId,
-        workerId: worker.id,
-        workerName: worker.name,
-        completedAt: serverTimestamp(),
-        localMs: Date.now()
+    async function confirmMonthlyReview(groupId) {
+      if (!state.hrUser || state.hrUser.role !== "supervisor" || !canSeeGroup(groupId)) return;
+      const month = $("reviewMonth").value || monthKey();
+      const reviewId = `${month}_${state.hrUser.id}_${groupId}`;
+      await setDoc(doc(state.db, "monthlyReviews", reviewId), {
+        monthKey: month,
+        groupId,
+        groupName: groupName(groupId),
+        supervisorId: state.hrUser.id,
+        supervisorName: state.hrUser.name,
+        reviewedAt: serverTimestamp(),
+        localMs: Date.now(),
+        status: "confirmed"
       });
-      showTasksModal();
-    }
-
-    function setAdminTab(tab) {
-      document.querySelectorAll("[data-admin-tab]").forEach((button) => button.classList.toggle("active", button.dataset.adminTab === tab));
-      document.querySelectorAll(".admin-section").forEach((section) => section.classList.remove("active"));
-      $(`${tab}Section`).classList.add("active");
-    }
-
-    function resetStaffForm() {
-      $("staffId").value = "";
-      $("staffName").value = "";
-      $("staffActive").value = "true";
-      $("staffSubmit").textContent = "Add Staff";
-    }
-
-    function resetTaskForm() {
-      $("taskId").value = "";
-      $("taskTime").value = "";
-      $("taskTitleEn").value = "";
-      $("taskTitleEs").value = "";
-      $("taskActive").value = "true";
-      $("taskSubmit").textContent = "Add Task";
+      await addDoc(collection(state.db, "notifications"), {
+        forRole: "director",
+        type: "monthlyReviewConfirmed",
+        title: "Monthly review confirmed",
+        message: `${state.hrUser.name} confirmed ${groupName(groupId)} records for ${month}.`,
+        monthKey: month,
+        groupId,
+        supervisorId: state.hrUser.id,
+        supervisorName: state.hrUser.name,
+        read: false,
+        localMs: Date.now(),
+        createdAt: serverTimestamp()
+      });
     }
 
     document.addEventListener("click", async (event) => {
@@ -1145,35 +1425,12 @@
 
       if (target.id === "workerViewBtn") showView(state.configured ? "worker" : "setup");
       if (target.id === "adminViewBtn") showView(state.configured ? "admin" : "setup");
-      if (target.id === "modalCancel") closeModal();
-      if (target.dataset.workerId) {
-        state.selectedWorkerId = target.dataset.workerId;
-        updateWorkerUi();
-      }
-      if (target.id === "clockInBtn") {
-        await clock("in");
-        showTasksModal({ welcome: true });
-      }
+      if (target.id === "clockInBtn") await clock("in");
       if (target.id === "clockOutBtn") await clock("out");
-      if (target.id === "timeOffBtn") showTimeOffModal();
-      if (target.id === "tasksBtn") showTasksModal();
-      if (target.id === "submitTimeOff") {
-        const worker = state.staff.find((person) => person.id === state.selectedWorkerId);
-        await addDoc(collection(state.db, "timeOffRequests"), {
-          workerId: worker.id,
-          workerName: worker.name,
-          dateKey: $("timeOffDate").value,
-          reason: $("timeOffReason").value.trim(),
-          status: "pending",
-          createdAt: serverTimestamp(),
-          localMs: Date.now()
-        });
-        closeModal();
-      }
-      if (target.dataset.completeTask) await markTaskComplete(target.dataset.completeTask);
+      if (target.id === "modalCancel") closeModal();
       if (target.dataset.adminTab) setAdminTab(target.dataset.adminTab);
       if (target.id === "adminLogoutBtn") {
-        state.adminAuthed = false;
+        state.hrUser = null;
         $("adminApp").classList.add("hidden");
         $("adminLogin").classList.remove("hidden");
       }
@@ -1181,106 +1438,184 @@
         const person = state.staff.find((item) => item.id === target.dataset.editStaff);
         $("staffId").value = person.id;
         $("staffName").value = person.name;
+        $("staffGroup").value = person.groupId || "other";
         $("staffActive").value = String(person.active !== false);
+        $("staffPinPreview").value = person.pin || "";
         $("staffSubmit").textContent = "Save Staff";
+        setAdminTab("staff");
+      }
+      if (target.dataset.pinStaff) {
+        const person = state.staff.find((item) => item.id === target.dataset.pinStaff);
+        await updateDoc(doc(state.db, "staff", person.id), { pin: generatePin(person.id), updatedAt: serverTimestamp() });
       }
       if (target.dataset.toggleStaff) {
         const person = state.staff.find((item) => item.id === target.dataset.toggleStaff);
-        await updateDoc(doc(state.db, "staff", person.id), { active: person.active === false });
+        await updateDoc(doc(state.db, "staff", person.id), { active: person.active === false, updatedAt: serverTimestamp() });
       }
-      if (target.dataset.deleteStaff && confirm("Remove this staff member?")) {
+      if (target.dataset.deleteStaff && confirm("Remove this staff member? Their existing time records will remain.")) {
         await deleteDoc(doc(state.db, "staff", target.dataset.deleteStaff));
       }
-      if (target.dataset.editTask) {
-        const task = state.tasks.find((item) => item.id === target.dataset.editTask);
-        $("taskId").value = task.id;
-        $("taskTime").value = task.time || "";
-        $("taskTitleEn").value = task.titleEn || "";
-        $("taskTitleEs").value = task.titleEs || "";
-        $("taskAssignee").value = task.defaultAssigneeId || "";
-        $("taskActive").value = String(task.active !== false);
-        $("taskSubmit").textContent = "Save Task";
+      if (target.dataset.editUser) {
+        const user = state.users.find((item) => item.id === target.dataset.editUser);
+        $("userId").value = user.id;
+        $("userName").value = user.name;
+        $("userUsername").value = user.username;
+        $("userUsername").readOnly = true;
+        $("userPassword").value = "";
+        $("userPassword").required = false;
+        $("userActive").value = String(user.active !== false);
+        renderUserGroupChecks(user.groupIds || []);
+        $("userSubmit").textContent = "Save Supervisor";
+        setAdminTab("users");
       }
-      if (target.dataset.deleteTask && confirm("Remove this task?")) {
-        await deleteDoc(doc(state.db, "tasks", target.dataset.deleteTask));
+      if (target.dataset.toggleUser) {
+        const user = state.users.find((item) => item.id === target.dataset.toggleUser);
+        await updateDoc(doc(state.db, "users", user.id), { active: user.active === false, updatedAt: serverTimestamp() });
       }
-      if (target.dataset.requestStatus) {
-        const [id, status] = target.dataset.requestStatus.split(":");
-        await updateDoc(doc(state.db, "timeOffRequests", id), { status, reviewedAt: serverTimestamp() });
+      if (target.dataset.deleteUser && confirm("Remove this supervisor user?")) {
+        await deleteDoc(doc(state.db, "users", target.dataset.deleteUser));
+      }
+      if (target.id === "addRecordBtn") {
+        openModal("Add Manual Record", recordForm(), `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveRecordBtn">Save Record</button>`);
+      }
+      if (target.dataset.editLog) {
+        const log = state.logs.find((item) => item.id === target.dataset.editLog);
+        if (log && canSeeGroup(log.groupId || "other")) {
+          openModal("Amend Time Record", recordForm(log), `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveRecordBtn">Save Correction</button>`);
+        }
+      }
+      if (target.id === "saveRecordBtn") await saveRecordFromModal();
+      if (target.dataset.confirmReview) await confirmMonthlyReview(target.dataset.confirmReview);
+      if (target.dataset.readNotice) {
+        await updateDoc(doc(state.db, "notifications", target.dataset.readNotice), { read: true, readAt: serverTimestamp() });
       }
     });
 
+    $("pinInput").addEventListener("input", () => {
+      setPinValue($("pinInput").value);
+      if ($("pinInput").value.length === 4) workerLogin();
+    });
+
+    document.querySelectorAll("[data-pin-key]").forEach((button) => {
+      button.addEventListener("pointerdown", async (event) => {
+        event.preventDefault();
+        await handlePinKey(button.dataset.pinKey);
+      });
+    });
+
+    document.addEventListener("keydown", async (event) => {
+      if ($("pinPanel").classList.contains("hidden")) return;
+      if (/^\d$/.test(event.key) || event.key === "Backspace" || event.key === "Delete" || event.key === "Escape" || event.key === "Enter") {
+        event.preventDefault();
+      }
+      if (/^\d$/.test(event.key)) await handlePinKey(event.key);
+      if (event.key === "Backspace") await handlePinKey("delete");
+      if (event.key === "Delete" || event.key === "Escape") await handlePinKey("clear");
+      if (event.key === "Enter" && $("pinInput").value.length === 4) await workerLogin();
+    });
+
     $("adminLoginBtn").addEventListener("click", async () => {
-      const attempted = $("adminPasswordInput").value;
-      const attemptedHash = await sha256(attempted);
-      const storedHash = state.settings.passwordHash || await sha256(DEFAULT_PASSWORD);
-      if (attemptedHash === storedHash) {
-        state.adminAuthed = true;
+      const username = normalizeUsername($("adminUsernameInput").value);
+      const passwordHash = await sha256($("adminPasswordInput").value);
+      const user = state.users.find((item) => item.username === username && item.active !== false);
+      if (user && user.passwordHash === passwordHash) {
+        state.hrUser = user;
         $("adminLogin").classList.add("hidden");
         $("adminApp").classList.remove("hidden");
+        $("adminUsernameInput").value = "";
         $("adminPasswordInput").value = "";
-        updateAdminUi();
+        setAdminTab("dashboard");
       } else {
-        alert("Incorrect password.");
+        alert("Incorrect username or password.");
       }
     });
 
     $("staffForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (state.hrUser?.role !== "director") return;
+      const id = $("staffId").value;
       const payload = {
         name: $("staffName").value.trim(),
+        groupId: $("staffGroup").value,
         active: $("staffActive").value === "true",
         updatedAt: serverTimestamp()
       };
-      const id = $("staffId").value;
-      if (id) await updateDoc(doc(state.db, "staff", id), payload);
-      else await addDoc(collection(state.db, "staff"), { ...payload, createdAt: serverTimestamp() });
+      if (id) {
+        await updateDoc(doc(state.db, "staff", id), payload);
+      } else {
+        await addDoc(collection(state.db, "staff"), {
+          ...payload,
+          pin: generatePin(),
+          createdAt: serverTimestamp()
+        });
+      }
       resetStaffForm();
     });
 
-    $("taskForm").addEventListener("submit", async (event) => {
+    $("userForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      $("taskSubmit").disabled = true;
-      $("taskSubmit").textContent = "Translating...";
-      const englishTitle = $("taskTitleEn").value.trim();
-      const spanishTitle = await translateTaskTitle(englishTitle);
+      if (state.hrUser?.role !== "director") return;
+      const id = $("userId").value;
+      const username = normalizeUsername($("userUsername").value);
+      const groupIds = selectedUserGroups();
+      if (!groupIds.length) {
+        alert("Choose at least one group for this supervisor.");
+        return;
+      }
       const payload = {
-        time: $("taskTime").value,
-        titleEn: englishTitle,
-        titleEs: spanishTitle,
-        defaultAssigneeId: $("taskAssignee").value,
-        active: $("taskActive").value === "true",
+        name: $("userName").value.trim(),
+        username,
+        role: "supervisor",
+        groupIds,
+        active: $("userActive").value === "true",
         updatedAt: serverTimestamp()
       };
-      const id = $("taskId").value;
-      if (id) await updateDoc(doc(state.db, "tasks", id), payload);
-      else await addDoc(collection(state.db, "tasks"), { ...payload, createdAt: serverTimestamp() });
-      $("taskSubmit").disabled = false;
-      resetTaskForm();
+      const password = $("userPassword").value;
+      if (!id && password.length < 6) {
+        alert("Enter a password of at least 6 characters for this supervisor.");
+        return;
+      }
+      if (password) payload.passwordHash = await sha256(password);
+      if (id) {
+        await updateDoc(doc(state.db, "users", id), payload);
+      } else {
+        const docId = username;
+        if (state.users.some((user) => user.username === username)) {
+          alert("That username already exists.");
+          return;
+        }
+        await setDoc(doc(state.db, "users", docId), {
+          ...payload,
+          passwordHash: await sha256(password),
+          createdAt: serverTimestamp()
+        });
+      }
+      resetUserForm();
     });
 
     $("passwordForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!state.hrUser) return;
       const currentHash = await sha256($("currentPassword").value);
-      const storedHash = state.settings.passwordHash || await sha256(DEFAULT_PASSWORD);
-      if (currentHash !== storedHash) {
+      if (currentHash !== state.hrUser.passwordHash) {
         alert("Current password is incorrect.");
         return;
       }
-      await setDoc(doc(state.db, "settings", "app"), {
+      await updateDoc(doc(state.db, "users", state.hrUser.id), {
         passwordHash: await sha256($("newPassword").value),
         updatedAt: serverTimestamp()
-      }, { merge: true });
+      });
       $("currentPassword").value = "";
       $("newPassword").value = "";
       alert("Password updated.");
     });
 
     $("staffCancel").addEventListener("click", resetStaffForm);
-    $("taskCancel").addEventListener("click", resetTaskForm);
-    $("taskTitleEn").addEventListener("input", scheduleTaskTitleTranslation);
-    $("taskTitleEn").addEventListener("blur", async () => {
-      $("taskTitleEs").value = await translateTaskTitle($("taskTitleEn").value);
+    $("userCancel").addEventListener("click", resetUserForm);
+    ["recordMonth", "recordGroup", "recordStaff", "recordTypeFilter"].forEach((id) => $(id).addEventListener("change", renderLogRows));
+    $("reviewMonth").addEventListener("change", () => {
+      renderDashboard();
+      renderReviews();
     });
     $("modalBackdrop").addEventListener("click", (event) => {
       if (event.target.id === "modalBackdrop") closeModal();
