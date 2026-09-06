@@ -418,6 +418,30 @@
 
     .metric strong { font-size: 2rem; }
 
+    .report-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .report-summary div {
+      display: grid;
+      gap: 4px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .report-summary span {
+      color: var(--dark);
+      font-size: 1.05rem;
+      font-weight: 800;
+    }
+
+    .report-table { min-width: 980px; }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -672,7 +696,7 @@
               <div class="section-head">
                 <div>
                   <h2>Time Records</h2>
-                  <p class="small">Review and correct clock-in or clock-out entries for visible staff.</p>
+                  <p class="small">Review records on a rolling basis and correct clock-in or clock-out entries for visible staff.</p>
                 </div>
                 <button class="blue" id="addRecordBtn">Add Manual Record</button>
               </div>
@@ -698,7 +722,7 @@
               <div class="section-head">
                 <div>
                   <h2>Monthly Reviews</h2>
-                  <p class="small">Supervisors confirm each month after reviewing records. The HR Director is notified when confirmations are submitted.</p>
+                  <p class="small">Supervisors submit an authorized monthly report after reviewing every staff member in their group. Directors can open each submitted report.</p>
                 </div>
               </div>
               <div class="form-grid">
@@ -707,7 +731,7 @@
               <div class="cards" id="reviewCards"></div>
               <div class="table-wrap director-only">
                 <table>
-                  <thead><tr><th>Supervisor</th><th>Group</th><th>Month</th><th>Status</th><th>Reviewed At</th></tr></thead>
+                  <thead><tr><th>Supervisor</th><th>Group</th><th>Month</th><th>Status</th><th>Staff</th><th>Records</th><th>Submitted At</th><th>Report</th></tr></thead>
                   <tbody id="reviewRows"></tbody>
                 </table>
               </div>
@@ -1032,7 +1056,7 @@
         <div class="metric"><span class="small">Visible Active Staff</span><strong>${people.length}</strong></div>
         <div class="metric"><span class="small">Clocked In Now</span><strong>${clockedIn}</strong></div>
         <div class="metric"><span class="small">Records This Month</span><strong>${visibleLogs.length}</strong></div>
-        <div class="metric"><span class="small">Monthly Reviews</span><strong>${completedReviews}/${expectedReviews || 0}</strong></div>
+        <div class="metric"><span class="small">Monthly Reports</span><strong>${completedReviews}/${expectedReviews || 0}</strong></div>
       `;
 
       if (state.hrUser.role !== "director") {
@@ -1049,15 +1073,16 @@
         <div class="section-head">
           <div>
             <h2>Director Notifications</h2>
-            <p class="small">Latest supervisor review confirmations.</p>
+            <p class="small">Latest submitted monthly reports.</p>
           </div>
         </div>
         <div class="cards">
           ${notices.map((notice) => `
             <div class="notice">
-              <strong>${esc(notice.title || "Monthly review confirmed")}</strong>
+              <strong>${esc(notice.title || "Monthly report submitted")}</strong>
               <span>${esc(notice.message || "")}</span>
               <span class="small">${esc(notice.monthKey || "")}${notice.read ? " · Read" : " · Unread"}</span>
+              ${notice.reviewId && state.reviews.some((review) => review.id === notice.reviewId) ? `<button class="outline" data-view-report="${esc(notice.reviewId)}">Open Report</button>` : ""}
               ${notice.read ? "" : `<button class="outline" data-read-notice="${notice.id}">Mark Read</button>`}
             </div>
           `).join("") || `<div class="notice"><span class="muted">No notifications yet.</span></div>`}
@@ -1158,6 +1183,102 @@
       return state.staff.find((person) => person.id === staffId)?.name || "Unknown staff";
     }
 
+    function monthLogsForStaff(staffId, month) {
+      return state.logs
+        .filter((log) => log.staffId === staffId)
+        .filter((log) => log.monthKey === month || String(log.dateKey || "").startsWith(month))
+        .sort((a, b) => (a.localMs || 0) - (b.localMs || 0));
+    }
+
+    function staffForGroup(groupId) {
+      return state.staff
+        .filter((person) => (person.groupId || "other") === groupId)
+        .filter((person) => person.active !== false)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    }
+
+    function summarizeStaffMonth(person, month) {
+      const logs = monthLogsForStaff(person.id, month);
+      const clockIns = logs.filter((log) => log.type === "in").length;
+      const clockOuts = logs.filter((log) => log.type === "out").length;
+      const manualUpdates = logs.filter((log) => log.source === "manual" || log.amended).length;
+      const first = logs[0]?.localMs ? formatDateTime(logs[0].localMs) : null;
+      const last = logs[logs.length - 1]?.localMs ? formatDateTime(logs[logs.length - 1].localMs) : null;
+      const flags = [];
+      if (!logs.length) flags.push("No records");
+      if (clockIns !== clockOuts) flags.push("Clock-in/out mismatch");
+      if (logs[logs.length - 1]?.type === "in") flags.push("Open shift");
+      return {
+        staffId: person.id,
+        staffName: person.name,
+        groupId: person.groupId || "other",
+        clockIns,
+        clockOuts,
+        totalRecords: logs.length,
+        manualUpdates,
+        firstRecord: first ? `${first.date} ${first.time}` : "",
+        lastRecord: last ? `${last.date} ${last.time}` : "",
+        flags
+      };
+    }
+
+    function buildMonthlyReport(month, groupId, supervisor = state.hrUser) {
+      const staffReports = staffForGroup(groupId).map((person) => summarizeStaffMonth(person, month));
+      return {
+        monthKey: month,
+        groupId,
+        groupName: groupName(groupId),
+        supervisorId: supervisor.id,
+        supervisorName: supervisor.name,
+        staffCount: staffReports.length,
+        recordCount: staffReports.reduce((sum, row) => sum + row.totalRecords, 0),
+        manualUpdateCount: staffReports.reduce((sum, row) => sum + row.manualUpdates, 0),
+        exceptionCount: staffReports.reduce((sum, row) => sum + row.flags.length, 0),
+        staffReports
+      };
+    }
+
+    function renderReportRows(staffReports = []) {
+      return staffReports.map((row) => `
+        <tr>
+          <td>${esc(row.staffName)}</td>
+          <td>${esc(row.clockIns)}</td>
+          <td>${esc(row.clockOuts)}</td>
+          <td>${esc(row.totalRecords)}</td>
+          <td>${esc(row.manualUpdates)}</td>
+          <td>${esc(row.firstRecord || "")}</td>
+          <td>${esc(row.lastRecord || "")}</td>
+          <td>${esc((row.flags || []).join(", ") || "Clear")}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="8">No active staff found for this group.</td></tr>`;
+    }
+
+    function openMonthlyReport(review) {
+      if (!review) return;
+      const reviewedAt = timestampToDate(review.reviewedAt) || timestampToDate(review.localMs);
+      openModal(
+        `${review.groupName || groupName(review.groupId)} report`,
+        `
+          <div class="report-summary">
+            <div><strong>Month</strong><span>${esc(review.monthKey || "")}</span></div>
+            <div><strong>Supervisor</strong><span>${esc(review.supervisorName || "")}</span></div>
+            <div><strong>Staff</strong><span>${esc(review.staffCount || 0)}</span></div>
+            <div><strong>Records</strong><span>${esc(review.recordCount || 0)}</span></div>
+            <div><strong>Manual updates</strong><span>${esc(review.manualUpdateCount || 0)}</span></div>
+            <div><strong>Exceptions</strong><span>${esc(review.exceptionCount || 0)}</span></div>
+          </div>
+          <p class="small">Authorized${reviewedAt ? ` ${esc(reviewedAt.toLocaleString())}` : ""} by ${esc(review.supervisorName || "supervisor")}.</p>
+          <div class="table-wrap">
+            <table class="report-table">
+              <thead><tr><th>Staff</th><th>In</th><th>Out</th><th>Total</th><th>Manual</th><th>First Record</th><th>Last Record</th><th>Notes</th></tr></thead>
+              <tbody>${renderReportRows(review.staffReports || [])}</tbody>
+            </table>
+          </div>
+        `,
+        `<button class="blue" id="modalCancel">Close</button>`
+      );
+    }
+
     function renderReviews() {
       if (!$("reviewMonth").value) $("reviewMonth").value = monthKey();
       const month = $("reviewMonth").value;
@@ -1167,22 +1288,31 @@
         : [state.hrUser];
 
       if (isDirector) {
+        const expected = supervisors.reduce((count, user) => count + (user.groupIds || []).length, 0);
+        const submitted = supervisors.flatMap((user) => (user.groupIds || []).map((groupId) => reviewFor(month, user.id, groupId))).filter(Boolean).length;
         $("reviewCards").innerHTML = `
           <div class="review-card">
             <strong>Director View</strong>
-            <span class="small">Review confirmations for ${esc(month)} are listed below by supervisor and group.</span>
+            <span class="small">${esc(submitted)} of ${esc(expected)} monthly reports submitted for ${esc(month)}.</span>
+          </div>
+          <div class="review-card">
+            <strong>Pending Reports</strong>
+            <span class="${expected - submitted ? "" : "small"}">${esc(expected - submitted)} still pending.</span>
           </div>
         `;
       } else {
         $("reviewCards").innerHTML = visibleGroupIds().map((groupId) => {
           const review = reviewFor(month, state.hrUser.id, groupId);
           const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
+          const report = buildMonthlyReport(month, groupId);
           return `
             <div class="review-card">
               <strong>${esc(groupName(groupId))}</strong>
-              <span>${review ? "Records reviewed and confirmed." : "Review pending."}</span>
+              <span>${review ? "Monthly report submitted and authorized." : "Monthly report pending."}</span>
+              <span class="small">${esc(report.staffCount)} staff · ${esc(report.recordCount)} records · ${esc(report.exceptionCount)} exceptions</span>
               <span class="small">${reviewedAt ? reviewedAt.toLocaleString() : `Month: ${esc(month)}`}</span>
-              <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Confirm Again" : "Confirm Reviewed"}</button>
+              <button class="outline" data-preview-report="${esc(groupId)}">Preview Report</button>
+              <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Resubmit Report" : "Submit End-of-Month Report"}</button>
             </div>
           `;
         }).join("") || `<div class="review-card"><span class="muted">No groups assigned to this supervisor.</span></div>`;
@@ -1197,12 +1327,15 @@
               <td>${esc(user.name)}</td>
               <td>${esc(groupName(groupId))}</td>
               <td>${esc(month)}</td>
-              <td><span class="pill ${review ? "confirmed" : "pending"}">${review ? "Confirmed" : "Pending"}</span></td>
+              <td><span class="pill ${review ? "confirmed" : "pending"}">${review ? "Submitted" : "Pending"}</span></td>
+              <td>${review ? esc(review.staffCount || 0) : ""}</td>
+              <td>${review ? esc(review.recordCount || 0) : ""}</td>
               <td>${reviewedAt ? esc(reviewedAt.toLocaleString()) : ""}</td>
+              <td>${review ? `<button class="outline" data-view-report="${esc(review.id)}">Open Report</button>` : ""}</td>
             </tr>
           `;
         }).join("");
-      $("reviewRows").innerHTML = rows || `<tr><td colspan="5">No supervisor review assignments found.</td></tr>`;
+      $("reviewRows").innerHTML = rows || `<tr><td colspan="8">No supervisor review assignments found.</td></tr>`;
     }
 
     function reviewFor(month, supervisorId, groupId) {
@@ -1411,25 +1544,24 @@
       if (!state.hrUser || state.hrUser.role !== "supervisor" || !canSeeGroup(groupId)) return;
       const month = $("reviewMonth").value || monthKey();
       const reviewId = `${month}_${state.hrUser.id}_${groupId}`;
+      const report = buildMonthlyReport(month, groupId);
       await setDoc(doc(state.db, "monthlyReviews", reviewId), {
-        monthKey: month,
-        groupId,
-        groupName: groupName(groupId),
-        supervisorId: state.hrUser.id,
-        supervisorName: state.hrUser.name,
+        ...report,
         reviewedAt: serverTimestamp(),
         localMs: Date.now(),
-        status: "confirmed"
+        status: "submitted",
+        authorized: true
       });
       await addDoc(collection(state.db, "notifications"), {
         forRole: "director",
-        type: "monthlyReviewConfirmed",
-        title: "Monthly review confirmed",
-        message: `${state.hrUser.name} confirmed ${groupName(groupId)} records for ${month}.`,
+        type: "monthlyReportSubmitted",
+        title: "Monthly report submitted",
+        message: `${state.hrUser.name} submitted and authorized the ${groupName(groupId)} report for ${month}.`,
         monthKey: month,
         groupId,
         supervisorId: state.hrUser.id,
         supervisorName: state.hrUser.name,
+        reviewId,
         read: false,
         localMs: Date.now(),
         createdAt: serverTimestamp()
@@ -1509,6 +1641,17 @@
         }
       }
       if (target.id === "saveRecordBtn") await saveRecordFromModal();
+      if (target.dataset.previewReport) {
+        const month = $("reviewMonth").value || monthKey();
+        openMonthlyReport({
+          ...buildMonthlyReport(month, target.dataset.previewReport),
+          supervisorName: state.hrUser.name,
+          reviewedAt: Date.now()
+        });
+      }
+      if (target.dataset.viewReport) {
+        openMonthlyReport(state.reviews.find((review) => review.id === target.dataset.viewReport));
+      }
       if (target.dataset.confirmReview) await confirmMonthlyReview(target.dataset.confirmReview);
       if (target.dataset.readNotice) {
         await updateDoc(doc(state.db, "notifications", target.dataset.readNotice), { read: true, readAt: serverTimestamp() });
