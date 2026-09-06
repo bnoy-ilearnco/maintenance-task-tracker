@@ -675,7 +675,7 @@
         <div id="adminApp" class="admin-grid hidden">
           <nav class="admin-nav panel">
             <button class="plain active" data-admin-tab="dashboard">Dashboard</button>
-            <button class="plain director-only" data-admin-tab="staff">Staff & PINs</button>
+            <button class="plain" data-admin-tab="staff">Staff & PINs</button>
             <button class="plain director-only" data-admin-tab="users">HR Users</button>
             <button class="plain" data-admin-tab="records">Time Records</button>
             <button class="plain" data-admin-tab="reviews">Monthly Reviews</button>
@@ -695,14 +695,18 @@
               <div id="directorNotifications" class="director-only"></div>
             </section>
 
-            <section class="admin-section director-only" id="staffSection">
+            <section class="admin-section" id="staffSection">
               <div class="section-head">
                 <div>
                   <h2>Staff & PINs</h2>
-                  <p class="small">Create staff, assign one or more groups, and generate secure four-digit PINs.</p>
+                  <p class="small">View visible staff and export the current staff list. Directors can also manage staff and PINs.</p>
+                </div>
+                <div class="row-actions">
+                  <button class="outline" id="exportStaffCsvBtn">Export CSV</button>
+                  <button class="outline" id="exportStaffPdfBtn">Export PDF</button>
                 </div>
               </div>
-              <form class="form-grid" id="staffForm">
+              <form class="form-grid director-only" id="staffForm">
                 <input type="hidden" id="staffId">
                 <label>Name<input id="staffName" required></label>
                 <div class="full">
@@ -993,8 +997,9 @@
       return staffGroupIds(person)[0] || "other";
     }
 
-    function staffGroupSummary(person) {
-      return staffGroupIds(person).map(groupName).join(", ") || "No groups";
+    function staffGroupSummary(person, options = {}) {
+      const groupIds = options.visibleOnly ? staffGroupIds(person).filter((groupId) => canSeeGroup(groupId)) : staffGroupIds(person);
+      return groupIds.map(groupName).join(", ") || "No groups";
     }
 
     function staffVisibleGroupIds(person) {
@@ -1303,7 +1308,7 @@
       document.querySelectorAll(".director-only").forEach((item) => {
         item.classList.toggle("hidden-by-role", !isDirector);
       });
-      if (!isDirector && ["staff", "users"].includes(state.activeAdminTab)) state.activeAdminTab = "records";
+      if (!isDirector && state.activeAdminTab === "users") state.activeAdminTab = "records";
       document.querySelectorAll("[data-admin-tab]").forEach((button) => button.classList.toggle("active", button.dataset.adminTab === state.activeAdminTab));
       document.querySelectorAll(".admin-section").forEach((section) => section.classList.remove("active"));
       $(`${state.activeAdminTab}Section`).classList.add("active");
@@ -1381,24 +1386,161 @@
     }
 
     function renderStaffRows() {
-      $("staffRows").innerHTML = state.staff
-        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      const canManageStaff = state.hrUser?.role === "director";
+      $("staffRows").innerHTML = visibleStaff()
         .map((person) => `
-          <tr>
-            <td>${esc(person.name)}</td>
-            <td>${esc(staffGroupSummary(person))}</td>
+            <tr>
+              <td>${esc(person.name)}</td>
+            <td>${esc(staffGroupSummary(person, { visibleOnly: true }))}</td>
             <td><strong>${esc(person.pin || "Missing")}</strong></td>
             <td><span class="pill">${person.active === false ? "Inactive" : "Active"}</span></td>
             <td>
-              <div class="row-actions">
+              ${canManageStaff ? `<div class="row-actions">
                 <button class="outline" data-edit-staff="${person.id}">Edit</button>
                 <button class="outline" data-pin-staff="${person.id}">Regenerate PIN</button>
                 <button class="outline" data-toggle-staff="${person.id}">${person.active === false ? "Activate" : "Deactivate"}</button>
                 <button class="red" data-delete-staff="${person.id}">Remove</button>
-              </div>
+              </div>` : `<span class="small">View only</span>`}
             </td>
           </tr>
         `).join("") || `<tr><td colspan="5">No staff added yet.</td></tr>`;
+    }
+
+    function staffExportRows() {
+      return visibleStaff().map((person) => ({
+        name: person.name || "",
+        groups: staffGroupSummary(person, { visibleOnly: true }),
+        pin: person.pin || "",
+        status: person.active === false ? "Inactive" : "Active"
+      }));
+    }
+
+    function downloadBlob(filename, type, content) {
+      const blob = content instanceof Blob ? content : new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function csvCell(value) {
+      const text = String(value ?? "");
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    function exportStaffCsv() {
+      const rows = staffExportRows();
+      if (!rows.length) {
+        alert("There are no staff rows to export.");
+        return;
+      }
+      const headers = ["Name", "Groups", "PIN", "Status"];
+      const csv = [
+        headers.map(csvCell).join(","),
+        ...rows.map((row) => [row.name, row.groups, row.pin, row.status].map(csvCell).join(","))
+      ].join("\n");
+      downloadBlob(`staff-pins-${todayKey()}.csv`, "text/csv;charset=utf-8", csv);
+    }
+
+    function pdfHex(text) {
+      let hex = "FEFF";
+      const value = String(text ?? "");
+      for (let index = 0; index < value.length; index += 1) {
+        hex += value.charCodeAt(index).toString(16).padStart(4, "0");
+      }
+      return `<${hex.toUpperCase()}>`;
+    }
+
+    function wrapPdfLine(text, maxLength = 82) {
+      const words = String(text ?? "").split(/\s+/).filter(Boolean);
+      const lines = [];
+      let line = "";
+      words.forEach((word) => {
+        const next = line ? `${line} ${word}` : word;
+        if (next.length > maxLength && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = next;
+        }
+      });
+      if (line) lines.push(line);
+      return lines.length ? lines : [""];
+    }
+
+    function buildStaffPdf(rows) {
+      const pageWidth = 612;
+      const pageHeight = 792;
+      const margin = 42;
+      const pages = [[]];
+      let y = pageHeight - margin;
+      const groupLabel = state.hrUser?.role === "director" ? "All groups" : visibleGroupIds().map(groupName).join(", ");
+
+      const addLine = (text, size = 10, indent = 0) => {
+        const lineHeight = size + 5;
+        if (y < margin + lineHeight) {
+          pages.push([]);
+          y = pageHeight - margin;
+        }
+        pages[pages.length - 1].push(`BT /F1 ${size} Tf ${margin + indent} ${y} Td ${pdfHex(text)} Tj ET`);
+        y -= lineHeight;
+      };
+
+      addLine("Staff & PINs", 18);
+      addLine(`Exported ${new Date().toLocaleString()}`, 10);
+      addLine(`Visible groups: ${groupLabel || "None"}`, 10);
+      y -= 8;
+
+      rows.forEach((row, index) => {
+        addLine(`${index + 1}. ${row.name}`, 12);
+        wrapPdfLine(`Groups: ${row.groups}`, 88).forEach((line) => addLine(line, 10, 14));
+        addLine(`PIN: ${row.pin || "Missing"}     Status: ${row.status}`, 10, 14);
+        y -= 5;
+      });
+
+      const objects = [];
+      const pageObjectIds = pages.map((_, index) => 3 + index * 2);
+      const fontObjectId = 3 + pages.length * 2;
+
+      objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+      objects.push(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
+
+      pages.forEach((pageCommands, index) => {
+        const pageObjectId = pageObjectIds[index];
+        const contentObjectId = pageObjectId + 1;
+        const stream = pageCommands.join("\n");
+        objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+        objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+      });
+
+      objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+      let pdf = "%PDF-1.4\n";
+      const offsets = [0];
+      objects.forEach((body, index) => {
+        offsets.push(pdf.length);
+        pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+      });
+      const xrefStart = pdf.length;
+      pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+      offsets.slice(1).forEach((offset) => {
+        pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+      });
+      pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+      return pdf;
+    }
+
+    function exportStaffPdf() {
+      const rows = staffExportRows();
+      if (!rows.length) {
+        alert("There are no staff rows to export.");
+        return;
+      }
+      downloadBlob(`staff-pins-${todayKey()}.pdf`, "application/pdf", buildStaffPdf(rows));
     }
 
     function renderUserRows() {
@@ -1907,6 +2049,8 @@
       if (target.id === "groupBackBtn") showWorkerLogin();
       if (target.dataset.workerGroup && state.worker) showWorkerClock(state.worker, target.dataset.workerGroup);
       if (target.id === "modalCancel") closeModal();
+      if (target.id === "exportStaffCsvBtn") exportStaffCsv();
+      if (target.id === "exportStaffPdfBtn") exportStaffPdf();
       if (target.dataset.adminTab) setAdminTab(target.dataset.adminTab);
       if (target.id === "adminLogoutBtn") {
         state.hrUser = null;
