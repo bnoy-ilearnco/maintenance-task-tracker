@@ -185,6 +185,25 @@
       padding: clamp(18px, 3vw, 28px);
     }
 
+    .thank-you-panel {
+      min-height: 260px;
+      place-items: center;
+      text-align: center;
+    }
+
+    .thank-you-panel h2 {
+      margin: 0;
+      font-size: clamp(2rem, 6vw, 3.6rem);
+      line-height: 1.05;
+    }
+
+    .thank-you-panel p {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1.1rem, 2.6vw, 1.45rem);
+      line-height: 1.4;
+    }
+
     .pin-entry {
       display: grid;
       gap: 10px;
@@ -597,6 +616,11 @@
               </button>
             </div>
           </div>
+
+          <div class="pin-panel panel hidden thank-you-panel" id="thankYouPanel" aria-live="polite">
+            <h2 id="thankYouHeading">Thank you!</h2>
+            <p id="thankYouMessage">Your time has been recorded.</p>
+          </div>
         </div>
       </section>
 
@@ -822,6 +846,8 @@
       reviews: [],
       notifications: [],
       settings: {},
+      workerResetTimer: null,
+      clockSaving: false,
       activeAdminTab: "dashboard"
     };
 
@@ -948,28 +974,45 @@
       throw new Error("Unable to generate a unique PIN. Too many active PINs exist.");
     }
 
-    function showWorkerLogin(message = "Enter your assigned PIN.", kind = "") {
+    function clearWorkerResetTimer() {
+      if (state.workerResetTimer) {
+        clearTimeout(state.workerResetTimer);
+        state.workerResetTimer = null;
+      }
+    }
+
+    function applyWorkerLoginScreen(message = "Enter your assigned PIN.", kind = "") {
       state.worker = null;
+      state.clockSaving = false;
       $("pinPanel").classList.remove("hidden");
       $("clockPanel").classList.add("hidden");
+      $("thankYouPanel").classList.add("hidden");
       $("pinInput").value = "";
       $("workerStatus").textContent = message;
       $("workerStatus").className = `status-line ${kind}`.trim();
       $("pinInput").focus();
     }
 
+    function showWorkerLogin(message = "Enter your assigned PIN.", kind = "") {
+      clearWorkerResetTimer();
+      applyWorkerLoginScreen(message, kind);
+    }
+
     function showWorkerClock(person) {
+      clearWorkerResetTimer();
       state.worker = person;
+      state.clockSaving = false;
       $("pinPanel").classList.add("hidden");
       $("clockPanel").classList.remove("hidden");
-      $("workerNameHeading").textContent = person.name;
+      $("thankYouPanel").classList.add("hidden");
+      $("workerNameHeading").textContent = `Hi ${person.name}!`;
       $("workerGroupLabel").textContent = groupName(person.groupId || "other");
       updateClockPanel();
     }
 
     function updateClockPanel() {
       const worker = state.worker;
-      if (!worker) return;
+      if (!worker || state.clockSaving) return;
       const clockedIn = isClockedIn(worker.id);
       $("clockInBtn").disabled = clockedIn;
       $("clockOutBtn").disabled = !clockedIn;
@@ -977,6 +1020,21 @@
       $("clockOutState").textContent = clockedIn ? "End shift" : "Not clocked in";
       $("clockStatus").textContent = `${worker.name} is ${clockedIn ? "clocked in" : "not clocked in"}.`;
       $("clockStatus").className = `status-line ${clockedIn ? "success" : ""}`.trim();
+    }
+
+    function showClockThankYou(worker, type) {
+      clearWorkerResetTimer();
+      state.worker = null;
+      state.clockSaving = false;
+      $("pinPanel").classList.add("hidden");
+      $("clockPanel").classList.add("hidden");
+      $("thankYouPanel").classList.remove("hidden");
+      $("thankYouHeading").textContent = "Thank you!";
+      $("thankYouMessage").textContent = `${worker.name}, your ${type === "in" ? "clock in" : "clock out"} has been recorded.`;
+      state.workerResetTimer = setTimeout(() => {
+        state.workerResetTimer = null;
+        applyWorkerLoginScreen("Ready for the next staff member.", "success");
+      }, 1600);
     }
 
     function renderGroupSelect(selectId, options = {}) {
@@ -1496,22 +1554,34 @@
 
     async function clock(type) {
       const worker = state.worker;
-      if (!worker) return;
-      const parts = localDateParts();
-      await addDoc(collection(state.db, "clockLogs"), {
-        staffId: worker.id,
-        staffName: worker.name,
-        groupId: worker.groupId || "other",
-        type,
-        dateKey: parts.dateKey,
-        monthKey: parts.monthKey,
-        localMs: Date.now(),
-        source: "pin",
-        timestamp: serverTimestamp()
-      });
-      $("clockStatus").textContent = `${type === "in" ? "Clock in" : "Clock out"} recorded for ${worker.name}.`;
-      $("clockStatus").className = "status-line success";
-      setTimeout(() => showWorkerLogin("Recorded. Enter your PIN for the next action.", "success"), 1400);
+      if (!worker || state.clockSaving) return;
+      state.clockSaving = true;
+      $("clockInBtn").disabled = true;
+      $("clockOutBtn").disabled = true;
+      $("clockStatus").textContent = `Recording ${type === "in" ? "clock in" : "clock out"} for ${worker.name}...`;
+      $("clockStatus").className = "status-line";
+      try {
+        const parts = localDateParts();
+        await addDoc(collection(state.db, "clockLogs"), {
+          staffId: worker.id,
+          staffName: worker.name,
+          groupId: worker.groupId || "other",
+          type,
+          dateKey: parts.dateKey,
+          monthKey: parts.monthKey,
+          localMs: Date.now(),
+          source: "pin",
+          timestamp: serverTimestamp()
+        });
+        showClockThankYou(worker, type);
+      } catch (error) {
+        console.error(error);
+        state.worker = worker;
+        state.clockSaving = false;
+        updateClockPanel();
+        $("clockStatus").textContent = "Could not record that action. Please try again.";
+        $("clockStatus").className = "status-line warning";
+      }
     }
 
     async function saveRecordFromModal() {
