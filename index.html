@@ -851,6 +851,7 @@
       updateDoc,
       deleteDoc,
       onSnapshot,
+      writeBatch,
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
@@ -883,8 +884,11 @@
       reviews: [],
       notifications: [],
       settings: {},
+      loaded: {},
       workerResetTimer: null,
       clockSaving: false,
+      staffMergeRunning: false,
+      staffMergeComplete: false,
       activeAdminTab: "dashboard"
     };
 
@@ -995,6 +999,108 @@
 
     function staffVisibleGroupIds(person) {
       return staffGroupIds(person).filter((groupId) => canSeeGroup(groupId));
+    }
+
+    function normalizedStaffName(name) {
+      return String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+    }
+
+    function staffSortTime(person) {
+      const created = timestampToDate(person.createdAt);
+      const updated = timestampToDate(person.updatedAt);
+      return (created || updated)?.getTime() || Number.MAX_SAFE_INTEGER;
+    }
+
+    function mergeStaffGroupIds(people) {
+      const groupIds = people.flatMap(staffGroupIds);
+      return [...new Set(groupIds)].filter(Boolean);
+    }
+
+    function chooseStaffMergeTarget(people) {
+      return [...people].sort((a, b) => {
+        if ((a.active !== false) !== (b.active !== false)) return a.active === false ? 1 : -1;
+        return staffSortTime(a) - staffSortTime(b) || String(a.id).localeCompare(String(b.id));
+      })[0];
+    }
+
+    async function mergeDuplicateStaffProfiles() {
+      if (state.hrUser?.role !== "director" || !state.loaded.staff || !state.loaded.logs || state.staffMergeRunning || state.staffMergeComplete) return;
+
+      const byName = new Map();
+      state.staff.forEach((person) => {
+        const key = normalizedStaffName(person.name);
+        if (!key) return;
+        if (!byName.has(key)) byName.set(key, []);
+        byName.get(key).push(person);
+      });
+
+      const duplicateSets = [...byName.values()].filter((people) => people.length > 1);
+      if (!duplicateSets.length) {
+        state.staffMergeComplete = true;
+        return;
+      }
+
+      state.staffMergeRunning = true;
+      let batch = writeBatch(state.db);
+      let operationCount = 0;
+      const commitIfNeeded = async () => {
+        if (operationCount < 440) return;
+        await batch.commit();
+        batch = writeBatch(state.db);
+        operationCount = 0;
+      };
+
+      try {
+        for (const people of duplicateSets) {
+          const target = chooseStaffMergeTarget(people);
+          const duplicates = people.filter((person) => person.id !== target.id);
+          const groupIds = mergeStaffGroupIds(people);
+          const mergedIds = people.map((person) => person.id);
+          const pin = target.pin || people.find((person) => person.pin)?.pin || generatePin(target.id);
+          const active = people.some((person) => person.active !== false);
+
+          batch.set(doc(state.db, "staff", target.id), {
+            name: target.name,
+            groupId: groupIds[0] || "other",
+            groupIds: groupIds.length ? groupIds : ["other"],
+            pin,
+            active,
+            mergedStaffIds: mergedIds,
+            mergedAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          operationCount += 1;
+          await commitIfNeeded();
+
+          for (const duplicate of duplicates) {
+            const duplicateLogs = state.logs.filter((log) => log.staffId === duplicate.id);
+            for (const log of duplicateLogs) {
+              batch.set(doc(state.db, "clockLogs", log.id), {
+                staffId: target.id,
+                staffName: target.name,
+                mergedFromStaffId: duplicate.id,
+                mergedFromStaffName: duplicate.name,
+                mergedAt: serverTimestamp()
+              }, { merge: true });
+              operationCount += 1;
+              await commitIfNeeded();
+            }
+
+            batch.delete(doc(state.db, "staff", duplicate.id));
+            operationCount += 1;
+            await commitIfNeeded();
+          }
+        }
+
+        if (operationCount) await batch.commit();
+        state.staffMergeComplete = true;
+      } catch (error) {
+        console.error(error);
+        state.staffMergeComplete = true;
+        alert("Some duplicate staff profiles could not be merged. Please try opening the HR Portal again.");
+      } finally {
+        state.staffMergeRunning = false;
+      }
     }
 
     function visibleStaff(options = {}) {
@@ -1206,6 +1312,7 @@
     function renderAdminUi() {
       if (!state.hrUser) return;
       applyRoleVisibility();
+      void mergeDuplicateStaffProfiles();
       renderDashboard();
       renderStaffControls();
       renderStaffRows();
@@ -1606,6 +1713,7 @@
     function listenToCollection(key, collectionName) {
       onSnapshot(collection(state.db, collectionName), (snapshot) => {
         state[key] = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+        state.loaded[key] = true;
         renderAll();
       }, (error) => alert(`Firestore error in ${collectionName}: ${error.message}`));
     }
@@ -1929,8 +2037,9 @@
         alert("Choose at least one group for this staff member.");
         return;
       }
+      const name = $("staffName").value.trim();
       const payload = {
-        name: $("staffName").value.trim(),
+        name,
         groupId: groupIds[0],
         groupIds,
         active: $("staffActive").value === "true",
@@ -1939,11 +2048,22 @@
       if (id) {
         await updateDoc(doc(state.db, "staff", id), payload);
       } else {
-        await addDoc(collection(state.db, "staff"), {
-          ...payload,
-          pin: generatePin(),
-          createdAt: serverTimestamp()
-        });
+        const existing = state.staff.find((person) => normalizedStaffName(person.name) === normalizedStaffName(name));
+        if (existing) {
+          const mergedGroupIds = [...new Set([...staffGroupIds(existing), ...groupIds])];
+          await updateDoc(doc(state.db, "staff", existing.id), {
+            ...payload,
+            groupId: mergedGroupIds[0] || "other",
+            groupIds: mergedGroupIds.length ? mergedGroupIds : ["other"],
+            active: payload.active || existing.active !== false
+          });
+        } else {
+          await addDoc(collection(state.db, "staff"), {
+            ...payload,
+            pin: generatePin(),
+            createdAt: serverTimestamp()
+          });
+        }
       }
       resetStaffForm();
     });
