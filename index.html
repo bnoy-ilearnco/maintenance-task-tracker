@@ -244,6 +244,29 @@
       color: var(--muted);
     }
 
+    .group-choice-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .group-choice-button {
+      min-height: 82px;
+      padding: 14px 16px;
+      display: grid;
+      gap: 4px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      text-align: left;
+      box-shadow: 0 6px 14px rgba(17, 24, 39, .06);
+    }
+
+    .group-choice-button span {
+      color: var(--muted);
+      font-size: .9rem;
+      font-weight: 650;
+    }
+
     .worker-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -599,6 +622,15 @@
             <div class="status-line" id="workerStatus">Enter your assigned PIN.</div>
           </div>
 
+          <div class="pin-panel panel hidden" id="groupChoicePanel">
+            <div>
+              <h2 id="groupChoiceHeading">Hi!</h2>
+              <p class="small">Which division are you clocking in or out for?</p>
+            </div>
+            <div class="group-choice-grid" id="groupChoiceButtons"></div>
+            <button class="outline" id="groupBackBtn">Use a different PIN</button>
+          </div>
+
           <div class="pin-panel panel hidden" id="clockPanel">
             <div>
               <h2 id="workerNameHeading">Ready</h2>
@@ -667,13 +699,17 @@
               <div class="section-head">
                 <div>
                   <h2>Staff & PINs</h2>
-                  <p class="small">Create staff, assign a group, and generate secure four-digit PINs.</p>
+                  <p class="small">Create staff, assign one or more groups, and generate secure four-digit PINs.</p>
                 </div>
               </div>
               <form class="form-grid" id="staffForm">
                 <input type="hidden" id="staffId">
                 <label>Name<input id="staffName" required></label>
-                <label>Group<select id="staffGroup" required></select></label>
+                <div class="full">
+                  <label>Groups</label>
+                  <p class="small">Choose every division this staff member may clock time for.</p>
+                  <div class="check-grid" id="staffGroupChecks"></div>
+                </div>
                 <label>Status
                   <select id="staffActive">
                     <option value="true">Active</option>
@@ -686,7 +722,7 @@
               </form>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Name</th><th>Group</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Groups</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody id="staffRows"></tbody>
                 </table>
               </div>
@@ -839,6 +875,7 @@
       db: null,
       configured: false,
       worker: null,
+      selectedWorkerGroupId: "",
       hrUser: null,
       staff: [],
       users: [],
@@ -941,11 +978,30 @@
       return visibleGroupIds().includes(groupId);
     }
 
+    function staffGroupIds(person) {
+      const groupIds = Array.isArray(person?.groupIds) && person.groupIds.length
+        ? person.groupIds
+        : [person?.groupId || "other"];
+      return [...new Set(groupIds.filter(Boolean))];
+    }
+
+    function primaryStaffGroupId(person) {
+      return staffGroupIds(person)[0] || "other";
+    }
+
+    function staffGroupSummary(person) {
+      return staffGroupIds(person).map(groupName).join(", ") || "No groups";
+    }
+
+    function staffVisibleGroupIds(person) {
+      return staffGroupIds(person).filter((groupId) => canSeeGroup(groupId));
+    }
+
     function visibleStaff(options = {}) {
       const includeInactive = options.includeInactive ?? true;
       return state.staff
         .filter((person) => includeInactive || person.active !== false)
-        .filter((person) => canSeeGroup(person.groupId || "other"))
+        .filter((person) => staffGroupIds(person).some((groupId) => canSeeGroup(groupId)))
         .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }
 
@@ -955,14 +1011,19 @@
         .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }
 
-    function latestLogFor(staffId, date = todayKey()) {
+    function latestLogFor(staffId, date = todayKey(), groupId = "") {
       return state.logs
         .filter((log) => log.staffId === staffId && log.dateKey === date)
+        .filter((log) => !groupId || (log.groupId || "other") === groupId)
         .sort((a, b) => (b.localMs || 0) - (a.localMs || 0))[0];
     }
 
-    function isClockedIn(staffId) {
-      return latestLogFor(staffId)?.type === "in";
+    function isClockedIn(staffId, groupId = "") {
+      return latestLogFor(staffId, todayKey(), groupId)?.type === "in";
+    }
+
+    function isClockedInAnyGroup(person) {
+      return staffGroupIds(person).some((groupId) => isClockedIn(person.id, groupId));
     }
 
     function generatePin(excludeStaffId = "") {
@@ -983,8 +1044,10 @@
 
     function applyWorkerLoginScreen(message = "Enter your assigned PIN.", kind = "") {
       state.worker = null;
+      state.selectedWorkerGroupId = "";
       state.clockSaving = false;
       $("pinPanel").classList.remove("hidden");
+      $("groupChoicePanel").classList.add("hidden");
       $("clockPanel").classList.add("hidden");
       $("thankYouPanel").classList.add("hidden");
       $("pinInput").value = "";
@@ -998,39 +1061,65 @@
       applyWorkerLoginScreen(message, kind);
     }
 
-    function showWorkerClock(person) {
+    function showWorkerGroupChoice(person) {
       clearWorkerResetTimer();
       state.worker = person;
+      state.selectedWorkerGroupId = "";
       state.clockSaving = false;
       $("pinPanel").classList.add("hidden");
+      $("groupChoicePanel").classList.remove("hidden");
+      $("clockPanel").classList.add("hidden");
+      $("thankYouPanel").classList.add("hidden");
+      $("groupChoiceHeading").textContent = `Hi ${person.name}!`;
+      $("groupChoiceButtons").innerHTML = staffGroupIds(person).map((groupId) => {
+        const clockedIn = isClockedIn(person.id, groupId);
+        return `
+        <button class="group-choice-button" data-worker-group="${esc(groupId)}">
+          <strong>${esc(groupName(groupId))}</strong>
+          <span>${clockedIn ? "Clocked in now" : "Not clocked in"}</span>
+        </button>
+      `;
+      }).join("");
+    }
+
+    function showWorkerClock(person, groupId = primaryStaffGroupId(person)) {
+      clearWorkerResetTimer();
+      state.worker = person;
+      state.selectedWorkerGroupId = groupId;
+      state.clockSaving = false;
+      $("pinPanel").classList.add("hidden");
+      $("groupChoicePanel").classList.add("hidden");
       $("clockPanel").classList.remove("hidden");
       $("thankYouPanel").classList.add("hidden");
       $("workerNameHeading").textContent = `Hi ${person.name}!`;
-      $("workerGroupLabel").textContent = groupName(person.groupId || "other");
+      $("workerGroupLabel").textContent = groupName(groupId);
       updateClockPanel();
     }
 
     function updateClockPanel() {
       const worker = state.worker;
-      if (!worker || state.clockSaving) return;
-      const clockedIn = isClockedIn(worker.id);
+      if (!worker || state.clockSaving || !state.selectedWorkerGroupId) return;
+      const groupId = state.selectedWorkerGroupId;
+      const clockedIn = isClockedIn(worker.id, groupId);
       $("clockInBtn").disabled = clockedIn;
       $("clockOutBtn").disabled = !clockedIn;
       $("clockInState").textContent = clockedIn ? "Already clocked in" : "Start shift";
       $("clockOutState").textContent = clockedIn ? "End shift" : "Not clocked in";
-      $("clockStatus").textContent = `${worker.name} is ${clockedIn ? "clocked in" : "not clocked in"}.`;
+      $("clockStatus").textContent = `${worker.name} is ${clockedIn ? "clocked in" : "not clocked in"} for ${groupName(groupId)}.`;
       $("clockStatus").className = `status-line ${clockedIn ? "success" : ""}`.trim();
     }
 
-    function showClockThankYou(worker, type) {
+    function showClockThankYou(worker, type, groupId) {
       clearWorkerResetTimer();
       state.worker = null;
+      state.selectedWorkerGroupId = "";
       state.clockSaving = false;
       $("pinPanel").classList.add("hidden");
+      $("groupChoicePanel").classList.add("hidden");
       $("clockPanel").classList.add("hidden");
       $("thankYouPanel").classList.remove("hidden");
       $("thankYouHeading").textContent = "Thank you!";
-      $("thankYouMessage").textContent = `${worker.name}, your ${type === "in" ? "clock in" : "clock out"} has been recorded.`;
+      $("thankYouMessage").textContent = `${worker.name}, your ${groupName(groupId)} ${type === "in" ? "clock in" : "clock out"} has been recorded.`;
       state.workerResetTimer = setTimeout(() => {
         state.workerResetTimer = null;
         applyWorkerLoginScreen("Ready for the next staff member.", "success");
@@ -1046,11 +1135,26 @@
     }
 
     function renderStaffSelect(selectId, options = {}) {
-      const people = visibleStaff({ includeInactive: false });
+      const people = options.groupId
+        ? visibleStaff({ includeInactive: false }).filter((person) => staffGroupIds(person).includes(options.groupId))
+        : visibleStaff({ includeInactive: false });
       const placeholder = options.placeholder ? `<option value="">${esc(options.placeholder)}</option>` : "";
       const current = $(selectId).value;
       $(selectId).innerHTML = placeholder + people.map((person) => `<option value="${person.id}">${esc(person.name)}</option>`).join("");
       if ([...$(selectId).options].some((option) => option.value === current)) $(selectId).value = current;
+    }
+
+    function renderStaffGroupChecks(selected = []) {
+      $("staffGroupChecks").innerHTML = GROUPS.map((group) => `
+        <label class="check-option">
+          <input type="checkbox" name="staffGroup" value="${group.id}" ${selected.includes(group.id) ? "checked" : ""}>
+          <span>${esc(group.name)}</span>
+        </label>
+      `).join("");
+    }
+
+    function selectedStaffGroups() {
+      return [...document.querySelectorAll("input[name='staffGroup']:checked")].map((input) => input.value);
     }
 
     function renderUserGroupChecks(selected = [], options = {}) {
@@ -1116,7 +1220,7 @@
       const people = visibleStaff({ includeInactive: false });
       const month = $("reviewMonth").value || monthKey();
       const visibleLogs = filteredLogs({ monthKey: month, skipType: true, skipStaff: true, skipGroup: true });
-      const clockedIn = people.filter((person) => isClockedIn(person.id)).length;
+      const clockedIn = people.filter((person) => isClockedInAnyGroup(person)).length;
       const supervisors = state.users.filter((user) => user.role === "supervisor" && user.active !== false);
       const expectedReviews = state.hrUser.role === "director"
         ? supervisors.reduce((count, user) => count + (user.groupIds || []).length, 0)
@@ -1165,7 +1269,7 @@
     }
 
     function renderStaffControls() {
-      renderGroupSelect("staffGroup");
+      renderStaffGroupChecks(selectedStaffGroups());
       renderUserGroupChecks(selectedUserGroups());
     }
 
@@ -1175,7 +1279,7 @@
         .map((person) => `
           <tr>
             <td>${esc(person.name)}</td>
-            <td>${esc(groupName(person.groupId || "other"))}</td>
+            <td>${esc(staffGroupSummary(person))}</td>
             <td><strong>${esc(person.pin || "Missing")}</strong></td>
             <td><span class="pill">${person.active === false ? "Inactive" : "Active"}</span></td>
             <td>
@@ -1215,7 +1319,10 @@
     function renderRecordFilters() {
       if (!$("recordMonth").value) $("recordMonth").value = monthKey();
       renderGroupSelect("recordGroup", { visibleOnly: true, placeholder: "All Visible Groups" });
-      renderStaffSelect("recordStaff", { placeholder: "All Visible Staff" });
+      renderStaffSelect("recordStaff", {
+        placeholder: $("recordGroup").value ? `All ${groupName($("recordGroup").value)} Staff` : "All Visible Staff",
+        groupId: $("recordGroup").value
+      });
     }
 
     function filteredLogs(options = {}) {
@@ -1264,15 +1371,20 @@
         .sort((a, b) => (a.localMs || 0) - (b.localMs || 0));
     }
 
+    function monthLogsForStaffGroup(staffId, month, groupId) {
+      return monthLogsForStaff(staffId, month)
+        .filter((log) => (log.groupId || "other") === groupId);
+    }
+
     function staffForGroup(groupId) {
       return state.staff
-        .filter((person) => (person.groupId || "other") === groupId)
+        .filter((person) => staffGroupIds(person).includes(groupId))
         .filter((person) => person.active !== false)
         .sort((a, b) => String(a.name).localeCompare(String(b.name)));
     }
 
-    function summarizeStaffMonth(person, month) {
-      const logs = monthLogsForStaff(person.id, month);
+    function summarizeStaffMonth(person, month, groupId) {
+      const logs = monthLogsForStaffGroup(person.id, month, groupId);
       const clockIns = logs.filter((log) => log.type === "in").length;
       const clockOuts = logs.filter((log) => log.type === "out").length;
       const manualUpdates = logs.filter((log) => log.source === "manual" || log.amended).length;
@@ -1285,7 +1397,7 @@
       return {
         staffId: person.id,
         staffName: person.name,
-        groupId: person.groupId || "other",
+        groupId,
         clockIns,
         clockOuts,
         totalRecords: logs.length,
@@ -1297,7 +1409,7 @@
     }
 
     function buildMonthlyReport(month, groupId, supervisor = state.hrUser) {
-      const staffReports = staffForGroup(groupId).map((person) => summarizeStaffMonth(person, month));
+      const staffReports = staffForGroup(groupId).map((person) => summarizeStaffMonth(person, month, groupId));
       return {
         monthKey: month,
         groupId,
@@ -1427,7 +1539,7 @@
     function resetStaffForm() {
       $("staffId").value = "";
       $("staffName").value = "";
-      $("staffGroup").value = "preschool";
+      renderStaffGroupChecks(["preschool"]);
       $("staffActive").value = "true";
       $("staffPinPreview").value = "";
       $("staffSubmit").textContent = "Add Staff";
@@ -1449,6 +1561,8 @@
 
     function recordForm(log = null) {
       const person = log ? state.staff.find((item) => item.id === log.staffId) : visibleStaff({ includeInactive: false })[0];
+      const visibleGroups = person ? staffVisibleGroupIds(person) : visibleGroupIds();
+      const selectedGroupId = log?.groupId && visibleGroups.includes(log.groupId) ? log.groupId : (visibleGroups[0] || "other");
       const parts = localDateParts(log?.localMs || Date.now());
       const dateKey = log?.dateKey || parts.dateKey;
       const timeKey = log?.localMs ? localDateParts(log.localMs).timeKey : parts.timeKey;
@@ -1460,6 +1574,9 @@
           <label>Staff Member<select id="recordStaffEdit" required>
             ${visibleStaff({ includeInactive: false }).map((staff) => `<option value="${staff.id}" ${staff.id === person?.id ? "selected" : ""}>${esc(staff.name)}</option>`).join("")}
           </select></label>
+          <label>Group<select id="recordGroupEdit" required>
+            ${visibleGroups.map((groupId) => `<option value="${esc(groupId)}" ${groupId === selectedGroupId ? "selected" : ""}>${esc(groupName(groupId))}</option>`).join("")}
+          </select></label>
           <label>Type<select id="recordTypeEdit" required>
             <option value="in" ${log?.type === "in" ? "selected" : ""}>Clock In</option>
             <option value="out" ${log?.type === "out" ? "selected" : ""}>Clock Out</option>
@@ -1467,6 +1584,15 @@
           <label class="full">Correction Note<textarea id="recordNoteEdit" placeholder="Why is this record being amended?">${esc(log?.amendmentNote || "")}</textarea></label>
         </form>
       `;
+    }
+
+    function updateRecordGroupEditOptions() {
+      if (!$("recordStaffEdit") || !$("recordGroupEdit")) return;
+      const staff = state.staff.find((person) => person.id === $("recordStaffEdit").value);
+      const visibleGroups = staff ? staffVisibleGroupIds(staff) : [];
+      const current = $("recordGroupEdit").value;
+      $("recordGroupEdit").innerHTML = visibleGroups.map((groupId) => `<option value="${esc(groupId)}">${esc(groupName(groupId))}</option>`).join("");
+      if (visibleGroups.includes(current)) $("recordGroupEdit").value = current;
     }
 
     async function ensureDefaults() {
@@ -1506,7 +1632,7 @@
       listenToCollection("logs", "clockLogs");
       listenToCollection("reviews", "monthlyReviews");
       listenToCollection("notifications", "notifications");
-      renderGroupSelect("staffGroup");
+      renderStaffGroupChecks(["preschool"]);
       renderGroupSelect("recordGroup", { visibleOnly: true, placeholder: "All Visible Groups" });
       resetUserForm();
       resetStaffForm();
@@ -1549,23 +1675,29 @@
         $("workerStatus").className = "status-line warning";
         return;
       }
-      showWorkerClock(person);
+      const groupIds = staffGroupIds(person);
+      if (groupIds.length > 1) {
+        showWorkerGroupChoice(person);
+      } else {
+        showWorkerClock(person, groupIds[0] || "other");
+      }
     }
 
     async function clock(type) {
       const worker = state.worker;
-      if (!worker || state.clockSaving) return;
+      const groupId = state.selectedWorkerGroupId || primaryStaffGroupId(worker);
+      if (!worker || state.clockSaving || !groupId) return;
       state.clockSaving = true;
       $("clockInBtn").disabled = true;
       $("clockOutBtn").disabled = true;
-      $("clockStatus").textContent = `Recording ${type === "in" ? "clock in" : "clock out"} for ${worker.name}...`;
+      $("clockStatus").textContent = `Recording ${type === "in" ? "clock in" : "clock out"} for ${worker.name} in ${groupName(groupId)}...`;
       $("clockStatus").className = "status-line";
       try {
         const parts = localDateParts();
         await addDoc(collection(state.db, "clockLogs"), {
           staffId: worker.id,
           staffName: worker.name,
-          groupId: worker.groupId || "other",
+          groupId,
           type,
           dateKey: parts.dateKey,
           monthKey: parts.monthKey,
@@ -1573,10 +1705,11 @@
           source: "pin",
           timestamp: serverTimestamp()
         });
-        showClockThankYou(worker, type);
+        showClockThankYou(worker, type, groupId);
       } catch (error) {
         console.error(error);
         state.worker = worker;
+        state.selectedWorkerGroupId = groupId;
         state.clockSaving = false;
         updateClockPanel();
         $("clockStatus").textContent = "Could not record that action. Please try again.";
@@ -1587,7 +1720,8 @@
     async function saveRecordFromModal() {
       const id = $("recordId").value;
       const staff = state.staff.find((person) => person.id === $("recordStaffEdit").value);
-      if (!staff || !canSeeGroup(staff.groupId || "other")) {
+      const groupId = $("recordGroupEdit").value;
+      if (!staff || !groupId || !staffGroupIds(staff).includes(groupId) || !canSeeGroup(groupId)) {
         alert("You cannot create or amend records for that staff member.");
         return;
       }
@@ -1596,7 +1730,7 @@
       const payload = {
         staffId: staff.id,
         staffName: staff.name,
-        groupId: staff.groupId || "other",
+        groupId,
         type: $("recordTypeEdit").value,
         dateKey: parts.dateKey,
         monthKey: parts.monthKey,
@@ -1662,6 +1796,8 @@
       if (target.id === "adminViewBtn") showView(state.configured ? "admin" : "setup");
       if (target.id === "clockInBtn") await clock("in");
       if (target.id === "clockOutBtn") await clock("out");
+      if (target.id === "groupBackBtn") showWorkerLogin();
+      if (target.dataset.workerGroup && state.worker) showWorkerClock(state.worker, target.dataset.workerGroup);
       if (target.id === "modalCancel") closeModal();
       if (target.dataset.adminTab) setAdminTab(target.dataset.adminTab);
       if (target.id === "adminLogoutBtn") {
@@ -1673,7 +1809,7 @@
         const person = state.staff.find((item) => item.id === target.dataset.editStaff);
         $("staffId").value = person.id;
         $("staffName").value = person.name;
-        $("staffGroup").value = person.groupId || "other";
+        renderStaffGroupChecks(staffGroupIds(person));
         $("staffActive").value = String(person.active !== false);
         $("staffPinPreview").value = person.pin || "";
         $("staffSubmit").textContent = "Save Staff";
@@ -1788,9 +1924,15 @@
       event.preventDefault();
       if (state.hrUser?.role !== "director") return;
       const id = $("staffId").value;
+      const groupIds = selectedStaffGroups();
+      if (!groupIds.length) {
+        alert("Choose at least one group for this staff member.");
+        return;
+      }
       const payload = {
         name: $("staffName").value.trim(),
-        groupId: $("staffGroup").value,
+        groupId: groupIds[0],
+        groupIds,
         active: $("staffActive").value === "true",
         updatedAt: serverTimestamp()
       };
@@ -1868,7 +2010,17 @@
     $("staffCancel").addEventListener("click", resetStaffForm);
     $("userCancel").addEventListener("click", resetUserForm);
     $("userRole").addEventListener("change", syncUserRoleForm);
-    ["recordMonth", "recordGroup", "recordStaff", "recordTypeFilter"].forEach((id) => $(id).addEventListener("change", renderLogRows));
+    $("recordGroup").addEventListener("change", () => {
+      renderStaffSelect("recordStaff", {
+        placeholder: $("recordGroup").value ? `All ${groupName($("recordGroup").value)} Staff` : "All Visible Staff",
+        groupId: $("recordGroup").value
+      });
+      renderLogRows();
+    });
+    ["recordMonth", "recordStaff", "recordTypeFilter"].forEach((id) => $(id).addEventListener("change", renderLogRows));
+    document.addEventListener("change", (event) => {
+      if (event.target?.id === "recordStaffEdit") updateRecordGroupEditOptions();
+    });
     $("reviewMonth").addEventListener("change", () => {
       renderDashboard();
       renderReviews();
