@@ -1472,39 +1472,102 @@
       return lines.length ? lines : [""];
     }
 
+    function pdfColor(color) {
+      return color.map((value) => (value / 255).toFixed(3)).join(" ");
+    }
+
+    function pdfRect(x, y, width, height, options = {}) {
+      const commands = [];
+      if (options.fill) {
+        commands.push(`q ${pdfColor(options.fill)} rg ${x} ${y} ${width} ${height} re f Q`);
+      }
+      if (options.stroke) {
+        commands.push(`q ${pdfColor(options.stroke)} RG ${options.lineWidth || 1} w ${x} ${y} ${width} ${height} re S Q`);
+      }
+      return commands.join("\n");
+    }
+
+    function pdfTextWidth(text, size, font = "F1") {
+      const factor = font === "F3" ? 0.62 : 0.52;
+      return String(text ?? "").length * size * factor;
+    }
+
+    function pdfText(text, x, y, size = 10, options = {}) {
+      const font = options.font || "F1";
+      const color = options.color || [33, 37, 41];
+      let textX = x;
+      if (options.align === "center") textX -= pdfTextWidth(text, size, font) / 2;
+      if (options.align === "right") textX -= pdfTextWidth(text, size, font);
+      return `BT /${font} ${size} Tf ${pdfColor(color)} rg ${textX.toFixed(2)} ${y.toFixed(2)} Td ${pdfHex(text)} Tj ET`;
+    }
+
     function buildStaffPdf(rows) {
       const pageWidth = 612;
       const pageHeight = 792;
-      const margin = 42;
-      const pages = [[]];
-      let y = pageHeight - margin;
+      const margin = 36;
+      const cardGapX = 18;
+      const cardGapY = 16;
+      const cardWidth = (pageWidth - (margin * 2) - cardGapX) / 2;
+      const cardHeight = 190;
+      const cardsPerPage = 6;
       const groupLabel = state.hrUser?.role === "director" ? "All groups" : visibleGroupIds().map(groupName).join(", ");
+      const pages = [];
+      const totalPages = Math.max(1, Math.ceil(rows.length / cardsPerPage));
 
-      const addLine = (text, size = 10, indent = 0) => {
-        const lineHeight = size + 5;
-        if (y < margin + lineHeight) {
-          pages.push([]);
-          y = pageHeight - margin;
-        }
-        pages[pages.length - 1].push(`BT /F1 ${size} Tf ${margin + indent} ${y} Td ${pdfHex(text)} Tj ET`);
-        y -= lineHeight;
+      const addPage = (pageIndex, pageRows) => {
+        const pageCommands = [];
+        const pageNumber = pageIndex + 1;
+        const exportedAt = new Date().toLocaleString();
+
+        pageCommands.push(pdfText("Staff PIN Cards", margin, pageHeight - 39, 18, { font: "F2", color: [20, 40, 70] }));
+        pageCommands.push(pdfText(`Exported ${exportedAt}`, pageWidth - margin, pageHeight - 36, 9, { align: "right", color: [87, 95, 107] }));
+        pageCommands.push(pdfText(`Visible groups: ${groupLabel || "None"}`, margin, pageHeight - 57, 9, { color: [87, 95, 107] }));
+        pageCommands.push(pdfText(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, 20, 8, { align: "right", color: [134, 142, 150] }));
+
+        pageRows.forEach((row, index) => {
+          const position = index % cardsPerPage;
+          const col = position % 2;
+          const rowIndex = Math.floor(position / 2);
+          const x = margin + col * (cardWidth + cardGapX);
+          const y = pageHeight - 88 - cardHeight - rowIndex * (cardHeight + cardGapY);
+          const top = y + cardHeight;
+          const centerX = x + cardWidth / 2;
+          const statusText = row.status === "Inactive" ? "Inactive" : "Active";
+
+          pageCommands.push(pdfRect(x, y, cardWidth, cardHeight, { fill: [255, 255, 255], stroke: [183, 149, 194], lineWidth: 1.2 }));
+          pageCommands.push(pdfRect(x, top - 34, cardWidth, 34, { fill: [250, 245, 252] }));
+          pageCommands.push(pdfRect(x + 12, y + 74, cardWidth - 24, 50, { fill: [247, 250, 252], stroke: [210, 217, 224], lineWidth: 0.8 }));
+
+          wrapPdfLine(row.name || "Unnamed Staff Member", 28).slice(0, 2).forEach((line, lineIndex) => {
+            pageCommands.push(pdfText(line, x + 14, top - 21 - lineIndex * 13, 12, { font: "F2", color: [45, 36, 52] }));
+          });
+
+          pageCommands.push(pdfText("Staff Time Clock PIN", centerX, y + 135, 9, { align: "center", color: [87, 95, 107] }));
+          pageCommands.push(pdfText(row.pin || "Missing", centerX, y + 89, row.pin ? 30 : 18, { font: "F3", align: "center", color: [20, 40, 70] }));
+
+          wrapPdfLine(row.groups || "No groups", 39).slice(0, 2).forEach((line, lineIndex) => {
+            pageCommands.push(pdfText(line, x + 14, y + 49 - lineIndex * 10, 8.5, { color: [73, 80, 87] }));
+          });
+          pageCommands.push(pdfText(statusText, x + cardWidth - 14, y + 16, 8.5, { align: "right", color: row.status === "Inactive" ? [176, 42, 55] : [43, 138, 62] }));
+        });
+
+        pages.push(pageCommands);
       };
 
-      addLine("Staff & PINs", 18);
-      addLine(`Exported ${new Date().toLocaleString()}`, 10);
-      addLine(`Visible groups: ${groupLabel || "None"}`, 10);
-      y -= 8;
+      for (let index = 0; index < rows.length; index += cardsPerPage) {
+        addPage(index / cardsPerPage, rows.slice(index, index + cardsPerPage));
+      }
 
-      rows.forEach((row, index) => {
-        addLine(`${index + 1}. ${row.name}`, 12);
-        wrapPdfLine(`Groups: ${row.groups}`, 88).forEach((line) => addLine(line, 10, 14));
-        addLine(`PIN: ${row.pin || "Missing"}     Status: ${row.status}`, 10, 14);
-        y -= 5;
-      });
+      if (!pages.length) {
+        addPage(0, []);
+      }
 
       const objects = [];
       const pageObjectIds = pages.map((_, index) => 3 + index * 2);
       const fontObjectId = 3 + pages.length * 2;
+      const boldFontObjectId = fontObjectId + 1;
+      const pinFontObjectId = fontObjectId + 2;
+      const fontResources = `/F1 ${fontObjectId} 0 R /F2 ${boldFontObjectId} 0 R /F3 ${pinFontObjectId} 0 R`;
 
       objects.push("<< /Type /Catalog /Pages 2 0 R >>");
       objects.push(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
@@ -1513,11 +1576,13 @@
         const pageObjectId = pageObjectIds[index];
         const contentObjectId = pageObjectId + 1;
         const stream = pageCommands.join("\n");
-        objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+        objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << ${fontResources} >> >> /Contents ${contentObjectId} 0 R >>`);
         objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
       });
 
       objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+      objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+      objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>");
 
       let pdf = "%PDF-1.4\n";
       const offsets = [0];
