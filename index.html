@@ -1446,13 +1446,14 @@
       downloadBlob(`staff-pins-${todayKey()}.csv`, "text/csv;charset=utf-8", csv);
     }
 
-    function pdfHex(text) {
-      let hex = "FEFF";
-      const value = String(text ?? "");
-      for (let index = 0; index < value.length; index += 1) {
-        hex += value.charCodeAt(index).toString(16).padStart(4, "0");
-      }
-      return `<${hex.toUpperCase()}>`;
+    function pdfString(text) {
+      return `(${String(text ?? "")
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\x20-\x7E]/g, "")
+        .replace(/\\/g, "\\\\")
+        .replace(/\(/g, "\\(")
+        .replace(/\)/g, "\\)")})`;
     }
 
     function wrapPdfLine(text, maxLength = 82) {
@@ -1487,9 +1488,22 @@
       return commands.join("\n");
     }
 
+    function pdfLine(x1, y1, x2, y2, options = {}) {
+      const dash = options.dash ? `[${options.dash.join(" ")}] 0 d ` : "";
+      return `q ${pdfColor(options.color || [180, 180, 180])} RG ${options.lineWidth || 0.8} w ${dash}${x1} ${y1} m ${x2} ${y2} l S Q`;
+    }
+
     function pdfTextWidth(text, size, font = "F1") {
       const factor = font === "F3" ? 0.62 : 0.52;
       return String(text ?? "").length * size * factor;
+    }
+
+    function fitPdfSize(text, maxWidth, preferredSize, minSize, font = "F1") {
+      let size = preferredSize;
+      while (size > minSize && pdfTextWidth(text, size, font) > maxWidth) {
+        size -= 0.5;
+      }
+      return size;
     }
 
     function pdfText(text, x, y, size = 10, options = {}) {
@@ -1498,18 +1512,18 @@
       let textX = x;
       if (options.align === "center") textX -= pdfTextWidth(text, size, font) / 2;
       if (options.align === "right") textX -= pdfTextWidth(text, size, font);
-      return `BT /${font} ${size} Tf ${pdfColor(color)} rg ${textX.toFixed(2)} ${y.toFixed(2)} Td ${pdfHex(text)} Tj ET`;
+      return `BT /${font} ${size} Tf ${pdfColor(color)} rg ${textX.toFixed(2)} ${y.toFixed(2)} Td ${pdfString(text)} Tj ET`;
     }
 
     function buildStaffPdf(rows) {
       const pageWidth = 612;
       const pageHeight = 792;
-      const margin = 36;
+      const margin = 34;
       const cardGapX = 18;
-      const cardGapY = 16;
+      const cardGapY = 18;
       const cardWidth = (pageWidth - (margin * 2) - cardGapX) / 2;
-      const cardHeight = 190;
-      const cardsPerPage = 6;
+      const cardHeight = (pageHeight - (margin * 2) - cardGapY) / 2;
+      const cardsPerPage = 4;
       const groupLabel = state.hrUser?.role === "director" ? "All groups" : visibleGroupIds().map(groupName).join(", ");
       const pages = [];
       const totalPages = Math.max(1, Math.ceil(rows.length / cardsPerPage));
@@ -1519,36 +1533,43 @@
         const pageNumber = pageIndex + 1;
         const exportedAt = new Date().toLocaleString();
 
-        pageCommands.push(pdfText("Staff PIN Cards", margin, pageHeight - 39, 18, { font: "F2", color: [20, 40, 70] }));
-        pageCommands.push(pdfText(`Exported ${exportedAt}`, pageWidth - margin, pageHeight - 36, 9, { align: "right", color: [87, 95, 107] }));
-        pageCommands.push(pdfText(`Visible groups: ${groupLabel || "None"}`, margin, pageHeight - 57, 9, { color: [87, 95, 107] }));
-        pageCommands.push(pdfText(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, 20, 8, { align: "right", color: [134, 142, 150] }));
+        pageCommands.push(pdfLine(pageWidth / 2, margin - 8, pageWidth / 2, pageHeight - margin + 8, { dash: [4, 4], color: [120, 120, 120], lineWidth: 0.6 }));
+        pageCommands.push(pdfLine(margin - 8, pageHeight / 2, pageWidth - margin + 8, pageHeight / 2, { dash: [4, 4], color: [120, 120, 120], lineWidth: 0.6 }));
+        pageCommands.push(pdfText(`Staff PIN Cards - ${groupLabel || "No groups"} - ${exportedAt}`, margin, 16, 7.5, { color: [100, 100, 100] }));
+        pageCommands.push(pdfText(`Page ${pageNumber} of ${totalPages}`, pageWidth - margin, 16, 7.5, { align: "right", color: [100, 100, 100] }));
 
         pageRows.forEach((row, index) => {
           const position = index % cardsPerPage;
           const col = position % 2;
           const rowIndex = Math.floor(position / 2);
           const x = margin + col * (cardWidth + cardGapX);
-          const y = pageHeight - 88 - cardHeight - rowIndex * (cardHeight + cardGapY);
+          const y = pageHeight - margin - cardHeight - rowIndex * (cardHeight + cardGapY);
           const top = y + cardHeight;
           const centerX = x + cardWidth / 2;
           const statusText = row.status === "Inactive" ? "Inactive" : "Active";
+          const pin = row.pin || "Missing";
 
-          pageCommands.push(pdfRect(x, y, cardWidth, cardHeight, { fill: [255, 255, 255], stroke: [183, 149, 194], lineWidth: 1.2 }));
-          pageCommands.push(pdfRect(x, top - 34, cardWidth, 34, { fill: [250, 245, 252] }));
-          pageCommands.push(pdfRect(x + 12, y + 74, cardWidth - 24, 50, { fill: [247, 250, 252], stroke: [210, 217, 224], lineWidth: 0.8 }));
+          pageCommands.push(pdfRect(x, y, cardWidth, cardHeight, { fill: [255, 255, 255], stroke: [25, 25, 25], lineWidth: 1.5 }));
+          pageCommands.push(pdfRect(x, top - 42, cardWidth, 42, { fill: [245, 245, 245], stroke: [25, 25, 25], lineWidth: 1 }));
+          pageCommands.push(pdfRect(x + 18, y + 126, cardWidth - 36, 92, { fill: [255, 255, 255], stroke: [25, 25, 25], lineWidth: 1.2 }));
 
-          wrapPdfLine(row.name || "Unnamed Staff Member", 28).slice(0, 2).forEach((line, lineIndex) => {
-            pageCommands.push(pdfText(line, x + 14, top - 21 - lineIndex * 13, 12, { font: "F2", color: [45, 36, 52] }));
+          pageCommands.push(pdfText("BYAM STAFF TIME CLOCK", centerX, top - 17, 8.5, { font: "F2", align: "center", color: [60, 60, 60] }));
+          pageCommands.push(pdfText("Personal Clock-In PIN", centerX, top - 31, 9, { align: "center", color: [60, 60, 60] }));
+
+          wrapPdfLine(row.name || "Unnamed Staff Member", 23).slice(0, 2).forEach((line, lineIndex) => {
+            const lineSize = fitPdfSize(line, cardWidth - 36, 17, 12, "F2");
+            pageCommands.push(pdfText(line, centerX, y + 276 - lineIndex * 18, lineSize, { font: "F2", align: "center", color: [0, 0, 0] }));
           });
 
-          pageCommands.push(pdfText("Staff Time Clock PIN", centerX, y + 135, 9, { align: "center", color: [87, 95, 107] }));
-          pageCommands.push(pdfText(row.pin || "Missing", centerX, y + 89, row.pin ? 30 : 18, { font: "F3", align: "center", color: [20, 40, 70] }));
+          pageCommands.push(pdfText("PIN", centerX, y + 196, 14, { font: "F2", align: "center", color: [0, 0, 0] }));
+          pageCommands.push(pdfText(pin, centerX, y + 148, row.pin ? 44 : 24, { font: "F3", align: "center", color: [0, 0, 0] }));
 
-          wrapPdfLine(row.groups || "No groups", 39).slice(0, 2).forEach((line, lineIndex) => {
-            pageCommands.push(pdfText(line, x + 14, y + 49 - lineIndex * 10, 8.5, { color: [73, 80, 87] }));
+          pageCommands.push(pdfText("Staff group", x + 18, y + 97, 9, { font: "F2", color: [60, 60, 60] }));
+          wrapPdfLine(row.groups || "No groups", 31).slice(0, 3).forEach((line, lineIndex) => {
+            const lineSize = fitPdfSize(line, cardWidth - 36, 12, 9, "F1");
+            pageCommands.push(pdfText(line, x + 18, y + 80 - lineIndex * 14, lineSize, { color: [0, 0, 0] }));
           });
-          pageCommands.push(pdfText(statusText, x + cardWidth - 14, y + 16, 8.5, { align: "right", color: row.status === "Inactive" ? [176, 42, 55] : [43, 138, 62] }));
+          pageCommands.push(pdfText(`Status: ${statusText}`, x + 18, y + 28, 10, { font: "F2", color: row.status === "Inactive" ? [150, 0, 0] : [0, 90, 0] }));
         });
 
         pages.push(pageCommands);
