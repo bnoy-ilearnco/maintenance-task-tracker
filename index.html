@@ -699,11 +699,12 @@
               <div class="section-head">
                 <div>
                   <h2>Staff & PINs</h2>
-                  <p class="small">View visible staff and export the current staff list. Directors can also manage staff and PINs.</p>
+                  <p class="small">View visible staff and export PIN cards. Supervisor PDF exports are limited to their assigned division staff.</p>
                 </div>
                 <div class="row-actions">
                   <button class="outline" id="exportStaffCsvBtn">Export CSV</button>
                   <button class="outline" id="exportStaffPdfBtn">Export PDF</button>
+                  <button class="outline director-only" id="exportDivisionStaffPdfBtn">Export Division PDFs</button>
                 </div>
               </div>
               <form class="form-grid director-only" id="staffForm">
@@ -1383,6 +1384,7 @@
     function renderStaffControls() {
       renderStaffGroupChecks(selectedStaffGroups());
       renderUserGroupChecks(selectedUserGroups());
+      $("exportStaffPdfBtn").textContent = state.hrUser?.role === "director" ? "Export Full PDF" : "Export Division PDF";
     }
 
     function renderStaffRows() {
@@ -1406,13 +1408,28 @@
         `).join("") || `<tr><td colspan="5">No staff added yet.</td></tr>`;
     }
 
-    function staffExportRows() {
-      return visibleStaff().map((person) => ({
+    function staffExportRows(options = {}) {
+      const groupId = options.groupId || "";
+      return visibleStaff()
+        .filter((person) => !groupId || staffGroupIds(person).includes(groupId))
+        .map((person) => ({
         name: person.name || "",
-        groups: staffGroupSummary(person, { visibleOnly: true }),
+        groups: groupId ? groupName(groupId) : staffGroupSummary(person, { visibleOnly: true }),
         pin: person.pin || "",
         status: person.active === false ? "Inactive" : "Active"
       }));
+    }
+
+    function visibleExportGroupIds() {
+      return visibleGroupIds().filter((groupId) => visibleStaff().some((person) => staffGroupIds(person).includes(groupId)));
+    }
+
+    function fileSlug(value) {
+      return String(value || "staff")
+        .toLowerCase()
+        .replace(/&/g, "and")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "staff";
     }
 
     function downloadBlob(filename, type, content) {
@@ -1515,7 +1532,7 @@
       return `BT /${font} ${size} Tf ${pdfColor(color)} rg ${textX.toFixed(2)} ${y.toFixed(2)} Td ${pdfString(text)} Tj ET`;
     }
 
-    function buildStaffPdf(rows) {
+    function buildStaffPdf(rows, options = {}) {
       const pageWidth = 612;
       const pageHeight = 792;
       const margin = 34;
@@ -1524,7 +1541,7 @@
       const cardWidth = (pageWidth - (margin * 2) - cardGapX) / 2;
       const cardHeight = (pageHeight - (margin * 2) - cardGapY) / 2;
       const cardsPerPage = 4;
-      const groupLabel = state.hrUser?.role === "director" ? "All groups" : visibleGroupIds().map(groupName).join(", ");
+      const groupLabel = options.groupLabel || (state.hrUser?.role === "director" ? "All groups" : visibleGroupIds().map(groupName).join(", "));
       const pages = [];
       const totalPages = Math.max(1, Math.ceil(rows.length / cardsPerPage));
 
@@ -1621,12 +1638,35 @@
     }
 
     function exportStaffPdf() {
+      if (state.hrUser?.role === "supervisor") {
+        exportDivisionStaffPdfs();
+        return;
+      }
+
       const rows = staffExportRows();
       if (!rows.length) {
         alert("There are no staff rows to export.");
         return;
       }
       downloadBlob(`staff-pins-${todayKey()}.pdf`, "application/pdf", buildStaffPdf(rows));
+    }
+
+    function exportDivisionStaffPdfs() {
+      const groupIds = visibleExportGroupIds();
+      if (!groupIds.length) {
+        alert("There are no division staff rows to export.");
+        return;
+      }
+
+      groupIds.forEach((groupId, index) => {
+        const rows = staffExportRows({ groupId });
+        if (!rows.length) return;
+        const groupLabel = groupName(groupId);
+        const filename = `staff-pins-${fileSlug(groupLabel)}-${todayKey()}.pdf`;
+        setTimeout(() => {
+          downloadBlob(filename, "application/pdf", buildStaffPdf(rows, { groupLabel }));
+        }, index * 150);
+      });
     }
 
     function renderUserRows() {
@@ -2137,6 +2177,7 @@
       if (target.id === "modalCancel") closeModal();
       if (target.id === "exportStaffCsvBtn") exportStaffCsv();
       if (target.id === "exportStaffPdfBtn") exportStaffPdf();
+      if (target.id === "exportDivisionStaffPdfBtn") exportDivisionStaffPdfs();
       if (target.dataset.adminTab) setAdminTab(target.dataset.adminTab);
       if (target.id === "adminLogoutBtn") {
         state.hrUser = null;
