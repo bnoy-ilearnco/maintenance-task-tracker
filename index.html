@@ -497,6 +497,102 @@
 
     .report-table { min-width: 980px; }
 
+    .timecard-tools {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .timecard-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+
+    .timecard-summary div {
+      display: grid;
+      gap: 4px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .timecard-summary span {
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .timecard-summary strong {
+      font-size: 1.25rem;
+    }
+
+    .timecard-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .timecard-weekday {
+      padding: 6px;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 850;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .timecard-day {
+      min-height: 116px;
+      padding: 10px;
+      display: grid;
+      align-content: start;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow-wrap: anywhere;
+    }
+
+    .timecard-day.empty {
+      visibility: hidden;
+      min-height: 0;
+    }
+
+    .timecard-day.present {
+      border-left-color: var(--green);
+      background: #e7f6ec;
+    }
+
+    .timecard-day.pto {
+      border-left-color: #d97706;
+      background: #fff7dc;
+    }
+
+    .timecard-day.uncovered {
+      border-left-color: var(--red);
+      background: #ffe9e9;
+    }
+
+    .timecard-day.non-school,
+    .timecard-day.future {
+      background: #f8fafc;
+      color: var(--muted);
+    }
+
+    .timecard-day strong {
+      font-size: .95rem;
+    }
+
+    .timecard-day span {
+      font-size: .86rem;
+      line-height: 1.35;
+    }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -544,8 +640,18 @@
       .pin-entry,
       .worker-actions,
       .form-grid,
+      .timecard-tools,
       .admin-grid {
         grid-template-columns: 1fr;
+      }
+
+      .timecard-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .timecard-weekday,
+      .timecard-day.empty {
+        display: none;
       }
 
       .admin-nav {
@@ -678,6 +784,7 @@
             <button class="plain" data-admin-tab="staff">Staff & PINs</button>
             <button class="plain director-only" data-admin-tab="users">HR Users</button>
             <button class="plain" data-admin-tab="records">Time Records</button>
+            <button class="plain" data-admin-tab="timecards">Monthly Time Cards</button>
             <button class="plain" data-admin-tab="reviews">Monthly Reviews</button>
             <button class="plain" data-admin-tab="settings">Account Settings</button>
             <button class="outline" id="adminLogoutBtn">Log Out</button>
@@ -721,13 +828,21 @@
                     <option value="false">Inactive</option>
                   </select>
                 </label>
+                <label>PTO Allowance<input id="staffPtoAllowance" type="number" min="0" step="0.25" placeholder="0"></label>
+                <label>PTO Unit
+                  <select id="staffPtoUnit">
+                    <option value="auto">Auto by group</option>
+                    <option value="days">Days</option>
+                    <option value="periods">Periods</option>
+                  </select>
+                </label>
                 <label>PIN<input id="staffPinPreview" readonly placeholder="Generated automatically"></label>
                 <button class="blue" type="submit" id="staffSubmit">Add Staff</button>
                 <button class="outline" type="button" id="staffCancel">Cancel Edit</button>
               </form>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>Name</th><th>Groups</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Groups</th><th>PIN</th><th>PTO</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody id="staffRows"></tbody>
                 </table>
               </div>
@@ -799,6 +914,24 @@
               </div>
             </section>
 
+            <section class="admin-section" id="timecardsSection">
+              <div class="section-head">
+                <div>
+                  <h2>Monthly Time Cards</h2>
+                  <p class="small">Search a staff member and review the month by division. Green days have clock records, orange days use PTO, and red days are school-day absences after PTO is used up.</p>
+                </div>
+              </div>
+              <div class="timecard-tools">
+                <label>Month<input id="timecardMonth" type="month"></label>
+                <label>Search Staff<input id="timecardStaffSearch" list="timecardStaffList" placeholder="Type a name"></label>
+                <datalist id="timecardStaffList"></datalist>
+                <label>Staff Member<select id="timecardStaff"></select></label>
+                <label>Division<select id="timecardGroup"></select></label>
+              </div>
+              <div class="timecard-summary" id="timecardSummary"></div>
+              <div class="timecard-grid" id="timecardGrid"></div>
+            </section>
+
             <section class="admin-section" id="reviewsSection">
               <div class="section-head">
                 <div>
@@ -829,6 +962,14 @@
                 <label>Current Password<input id="currentPassword" type="password" required></label>
                 <label>New Password<input id="newPassword" type="password" required minlength="6"></label>
                 <button class="blue" type="submit">Update Password</button>
+              </form>
+              <form class="form-grid director-only" id="calendarForm">
+                <div class="full">
+                  <label>Non-School Dates</label>
+                  <p class="small">Enter one date per line. These dates are skipped when PTO and uncovered absences are calculated.</p>
+                  <textarea id="nonSchoolDatesInput" placeholder="2026-09-07&#10;2026-09-23"></textarea>
+                </div>
+                <button class="blue" type="submit">Save Calendar Dates</button>
               </form>
             </section>
           </div>
@@ -940,6 +1081,82 @@
       return GROUPS.find((group) => group.id === groupId)?.name || "Unassigned";
     }
 
+    function numberValue(value) {
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 ? number : 0;
+    }
+
+    function ptoBucketForStaff(person, groupId = "") {
+      const buckets = person?.ptoByGroup && typeof person.ptoByGroup === "object" ? person.ptoByGroup : {};
+      return groupId && buckets[groupId] && typeof buckets[groupId] === "object" ? buckets[groupId] : {};
+    }
+
+    function ptoAllowanceForStaff(person, groupId = "") {
+      const bucket = ptoBucketForStaff(person, groupId);
+      return numberValue(bucket.allowance ?? bucket.ptoAllowance ?? person?.ptoAllowance ?? person?.ptoDays ?? person?.pto ?? person?.allowance ?? person?.daysPerWeek ?? person?.periodsPerWeek);
+    }
+
+    function ptoUnitForStaff(person, groupId = "") {
+      const bucket = ptoBucketForStaff(person, groupId);
+      if (bucket.unit === "days" || bucket.unit === "periods") return bucket.unit;
+      if (person?.ptoUnit === "days" || person?.ptoUnit === "periods") return person.ptoUnit;
+      if ((groupId || primaryStaffGroupId(person)) === "highschool") return "periods";
+      return "days";
+    }
+
+    function ptoUnitLabel(unit, amount = 2) {
+      if (unit === "periods") return Number(amount) === 1 ? "period" : "periods";
+      return Number(amount) === 1 ? "day" : "days";
+    }
+
+    function ptoSummary(person, groupId = "") {
+      const allowance = ptoAllowanceForStaff(person, groupId);
+      const unit = ptoUnitForStaff(person, groupId);
+      return allowance ? `${allowance} ${ptoUnitLabel(unit, allowance)}` : "Not set";
+    }
+
+    function dateKeyFromDate(date) {
+      return localDateParts(date.getTime()).dateKey;
+    }
+
+    function dateKeysBetween(startKey, endKey) {
+      const dates = [];
+      const cursor = new Date(`${startKey}T12:00:00`);
+      const end = new Date(`${endKey}T12:00:00`);
+      while (cursor <= end) {
+        dates.push(dateKeyFromDate(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return dates;
+    }
+
+    function monthDateKeys(month) {
+      const [year, monthNumber] = month.split("-").map(Number);
+      if (!year || !monthNumber) return [];
+      const lastDay = new Date(year, monthNumber, 0).getDate();
+      return Array.from({ length: lastDay }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`);
+    }
+
+    function schoolYearStartForMonth(month) {
+      const [year, monthNumber] = month.split("-").map(Number);
+      const startYear = monthNumber >= 9 ? year : year - 1;
+      return `${startYear}-09-01`;
+    }
+
+    function isWeekendDate(dateKey) {
+      const day = new Date(`${dateKey}T12:00:00`).getDay();
+      return day === 0 || day === 6;
+    }
+
+    function normalizedNonSchoolDates() {
+      const values = Array.isArray(state.settings?.nonSchoolDates) ? state.settings.nonSchoolDates : [];
+      return [...new Set(values.map((value) => String(value).trim()).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+    }
+
+    function isSchoolDay(dateKey) {
+      return !isWeekendDate(dateKey) && !normalizedNonSchoolDates().includes(dateKey);
+    }
+
     function normalizeUsername(username) {
       return username.trim().toLowerCase();
     }
@@ -1022,6 +1239,22 @@
       return [...new Set(groupIds)].filter(Boolean);
     }
 
+    function mergeStaffPtoByGroup(people, groupIds) {
+      const ptoByGroup = {};
+      groupIds.forEach((groupId) => {
+        const source = people.find((person) => staffGroupIds(person).includes(groupId) && ptoAllowanceForStaff(person, groupId))
+          || people.find((person) => staffGroupIds(person).includes(groupId))
+          || people[0];
+        const allowance = ptoAllowanceForStaff(source, groupId);
+        if (!allowance) return;
+        ptoByGroup[groupId] = {
+          allowance,
+          unit: ptoUnitForStaff(source, groupId)
+        };
+      });
+      return ptoByGroup;
+    }
+
     function chooseStaffMergeTarget(people) {
       return [...people].sort((a, b) => {
         if ((a.active !== false) !== (b.active !== false)) return a.active === false ? 1 : -1;
@@ -1064,6 +1297,7 @@
           const mergedIds = people.map((person) => person.id);
           const pin = target.pin || people.find((person) => person.pin)?.pin || generatePin(target.id);
           const active = people.some((person) => person.active !== false);
+          const ptoByGroup = mergeStaffPtoByGroup(people, groupIds);
 
           batch.set(doc(state.db, "staff", target.id), {
             name: target.name,
@@ -1071,6 +1305,7 @@
             groupIds: groupIds.length ? groupIds : ["other"],
             pin,
             active,
+            ...(Object.keys(ptoByGroup).length ? { ptoByGroup } : {}),
             mergedStaffIds: mergedIds,
             mergedAt: serverTimestamp(),
             updatedAt: serverTimestamp()
@@ -1325,7 +1560,9 @@
       renderUserRows();
       renderRecordFilters();
       renderLogRows();
+      renderTimecardStaffOptions();
       renderReviews();
+      renderSettings();
     }
 
     function renderDashboard() {
@@ -1395,6 +1632,7 @@
               <td>${esc(person.name)}</td>
             <td>${esc(staffGroupSummary(person, { visibleOnly: true }))}</td>
             <td><strong>${esc(person.pin || "Missing")}</strong></td>
+            <td>${esc(ptoSummary(person, staffVisibleGroupIds(person)[0] || primaryStaffGroupId(person)))}</td>
             <td><span class="pill">${person.active === false ? "Inactive" : "Active"}</span></td>
             <td>
               ${canManageStaff ? `<div class="row-actions">
@@ -1405,7 +1643,7 @@
               </div>` : `<span class="small">View only</span>`}
             </td>
           </tr>
-        `).join("") || `<tr><td colspan="5">No staff added yet.</td></tr>`;
+        `).join("") || `<tr><td colspan="6">No staff added yet.</td></tr>`;
     }
 
     function staffExportRows(options = {}) {
@@ -1416,6 +1654,7 @@
         name: person.name || "",
         groups: groupId ? groupName(groupId) : staffGroupSummary(person, { visibleOnly: true }),
         pin: person.pin || "",
+        pto: ptoSummary(person, groupId || staffVisibleGroupIds(person)[0] || primaryStaffGroupId(person)),
         status: person.active === false ? "Inactive" : "Active"
       }));
     }
@@ -1455,10 +1694,10 @@
         alert("There are no staff rows to export.");
         return;
       }
-      const headers = ["Name", "Groups", "PIN", "Status"];
+      const headers = ["Name", "Groups", "PIN", "PTO Allowance", "Status"];
       const csv = [
         headers.map(csvCell).join(","),
-        ...rows.map((row) => [row.name, row.groups, row.pin, row.status].map(csvCell).join(","))
+        ...rows.map((row) => [row.name, row.groups, row.pin, row.pto, row.status].map(csvCell).join(","))
       ].join("\n");
       downloadBlob(`staff-pins-${todayKey()}.csv`, "text/csv;charset=utf-8", csv);
     }
@@ -1735,6 +1974,80 @@
       $("logRows").innerHTML = rows || `<tr><td colspan="7">No records match the current filters.</td></tr>`;
     }
 
+    function renderTimecardStaffOptions() {
+      if (!$("timecardMonth").value) $("timecardMonth").value = monthKey();
+      const search = $("timecardStaffSearch").value.trim().toLowerCase();
+      const current = $("timecardStaff").value;
+      const allPeople = visibleStaff({ includeInactive: false });
+      const people = allPeople.filter((person) => !search || String(person.name || "").toLowerCase().includes(search));
+      $("timecardStaffList").innerHTML = allPeople.map((person) => `<option value="${esc(person.name)}"></option>`).join("");
+      $("timecardStaff").innerHTML = people.map((person) => `<option value="${esc(person.id)}">${esc(person.name)}</option>`).join("");
+      if (people.some((person) => person.id === current)) {
+        $("timecardStaff").value = current;
+      } else if (people.length) {
+        $("timecardStaff").value = people[0].id;
+      }
+      renderTimecardGroupOptions();
+    }
+
+    function renderTimecardGroupOptions() {
+      const person = state.staff.find((item) => item.id === $("timecardStaff").value);
+      const current = $("timecardGroup").value;
+      const groups = person ? staffVisibleGroupIds(person) : visibleGroupIds();
+      $("timecardGroup").innerHTML = groups.map((groupId) => `<option value="${esc(groupId)}">${esc(groupName(groupId))}</option>`).join("");
+      if (groups.includes(current)) $("timecardGroup").value = current;
+      renderTimecardView();
+    }
+
+    function applyTimecardSearch() {
+      const search = $("timecardStaffSearch").value.trim().toLowerCase();
+      const exact = visibleStaff({ includeInactive: false }).find((person) => String(person.name || "").toLowerCase() === search);
+      if (exact) $("timecardStaff").value = exact.id;
+      renderTimecardStaffOptions();
+    }
+
+    function renderTimecardView() {
+      const person = state.staff.find((item) => item.id === $("timecardStaff").value);
+      const month = $("timecardMonth").value || monthKey();
+      const groupId = $("timecardGroup").value;
+      if (!person || !groupId) {
+        $("timecardSummary").innerHTML = `<div><span>Status</span><strong>No staff selected</strong></div>`;
+        $("timecardGrid").innerHTML = "";
+        return;
+      }
+
+      const ledger = buildPtoLedger(person, month, groupId);
+      const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const firstDay = new Date(`${month}-01T12:00:00`).getDay();
+      const blanks = Array.from({ length: firstDay }, () => `<div class="timecard-day empty"></div>`).join("");
+      const entries = ledger.entries.map((entry) => {
+        const dayNumber = Number(entry.dateKey.slice(-2));
+        return `
+          <div class="timecard-day ${esc(entry.status)}">
+            <strong>${esc(dayNumber)}</strong>
+            <span>${esc(entry.label)}</span>
+            ${entry.detail ? `<span>${entry.detail}</span>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      $("timecardSummary").innerHTML = `
+        <div><span>Staff Member</span><strong>${esc(person.name)}</strong></div>
+        <div><span>Division</span><strong>${esc(groupName(groupId))}</strong></div>
+        <div><span>PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
+        <div><span>PTO Used</span><strong>${esc(ledger.used)} ${esc(ptoUnitLabel(ledger.unit, ledger.used))}</strong></div>
+        <div><span>Remaining</span><strong>${esc(ledger.remaining)} ${esc(ptoUnitLabel(ledger.unit, ledger.remaining))}</strong></div>
+        <div><span>Uncovered</span><strong>${esc(ledger.uncovered)} school days</strong></div>
+      `;
+      $("timecardGrid").innerHTML = weekdays.map((day) => `<div class="timecard-weekday">${day}</div>`).join("") + blanks + entries;
+    }
+
+    function renderSettings() {
+      if ($("nonSchoolDatesInput") && document.activeElement !== $("nonSchoolDatesInput")) {
+        $("nonSchoolDatesInput").value = normalizedNonSchoolDates().join("\n");
+      }
+    }
+
     function staffName(staffId) {
       return state.staff.find((person) => person.id === staffId)?.name || "Unknown staff";
     }
@@ -1751,6 +2064,91 @@
         .filter((log) => (log.groupId || "other") === groupId);
     }
 
+    function logsForStaffGroupDate(staffId, groupId, dateKey) {
+      return state.logs
+        .filter((log) => log.staffId === staffId)
+        .filter((log) => (log.groupId || "other") === groupId)
+        .filter((log) => (log.dateKey || localDateParts(log.localMs || Date.now()).dateKey) === dateKey)
+        .sort((a, b) => (a.localMs || 0) - (b.localMs || 0));
+    }
+
+    function clockTextForDay(logs) {
+      const clockIns = logs.filter((log) => log.type === "in").map((log) => formatDateTime(log.localMs || Date.now()).time);
+      const clockOuts = logs.filter((log) => log.type === "out").map((log) => formatDateTime(log.localMs || Date.now()).time);
+      const lines = [];
+      if (clockIns.length) lines.push(`In: ${clockIns.join(", ")}`);
+      if (clockOuts.length) lines.push(`Out: ${clockOuts.join(", ")}`);
+      return lines.join("; ") || "Clock record found";
+    }
+
+    function ptoUnitsForAbsence() {
+      return 1;
+    }
+
+    function buildPtoLedger(person, month, groupId) {
+      const today = todayKey();
+      const allowance = ptoAllowanceForStaff(person, groupId);
+      const unit = ptoUnitForStaff(person, groupId);
+      const start = schoolYearStartForMonth(month);
+      const monthDays = monthDateKeys(month);
+      const end = monthDays[monthDays.length - 1] || today;
+      let used = 0;
+      let uncovered = 0;
+      const allEntries = dateKeysBetween(start, end).map((dateKey) => {
+        const logs = logsForStaffGroupDate(person.id, groupId, dateKey);
+        const hasClockIn = logs.some((log) => log.type === "in");
+        const entry = {
+          dateKey,
+          logs,
+          usedBefore: used,
+          usedAfter: used,
+          status: "non-school",
+          label: "Non-school day",
+          detail: ""
+        };
+
+        if (dateKey > today) {
+          entry.status = "future";
+          entry.label = "Not due yet";
+          return entry;
+        }
+
+        if (hasClockIn) {
+          entry.status = "present";
+          entry.label = "Clocked in";
+          entry.detail = clockTextForDay(logs);
+          return entry;
+        }
+
+        if (!isSchoolDay(dateKey)) return entry;
+
+        const units = ptoUnitsForAbsence(person, groupId, dateKey);
+        if (used + units <= allowance) {
+          used += units;
+          entry.usedAfter = used;
+          entry.status = "pto";
+          entry.label = `PTO used (${units} ${ptoUnitLabel(unit, units)})`;
+          entry.detail = `${Math.max(allowance - used, 0)} ${ptoUnitLabel(unit, allowance - used)} remaining`;
+          return entry;
+        }
+
+        uncovered += 1;
+        entry.status = "uncovered";
+        entry.label = "Uncovered absence";
+        entry.detail = "PTO exhausted";
+        return entry;
+      });
+
+      return {
+        allowance,
+        unit,
+        used,
+        remaining: Math.max(allowance - used, 0),
+        uncovered,
+        entries: allEntries.filter((entry) => entry.dateKey.startsWith(month))
+      };
+    }
+
     function staffForGroup(groupId) {
       return state.staff
         .filter((person) => staffGroupIds(person).includes(groupId))
@@ -1765,10 +2163,12 @@
       const manualUpdates = logs.filter((log) => log.source === "manual" || log.amended).length;
       const first = logs[0]?.localMs ? formatDateTime(logs[0].localMs) : null;
       const last = logs[logs.length - 1]?.localMs ? formatDateTime(logs[logs.length - 1].localMs) : null;
+      const pto = buildPtoLedger(person, month, groupId);
       const flags = [];
       if (!logs.length) flags.push("No records");
       if (clockIns !== clockOuts) flags.push("Clock-in/out mismatch");
       if (logs[logs.length - 1]?.type === "in") flags.push("Open shift");
+      if (pto.uncovered) flags.push(`${pto.uncovered} uncovered school-day absence${pto.uncovered === 1 ? "" : "s"}`);
       return {
         staffId: person.id,
         staffName: person.name,
@@ -1777,6 +2177,11 @@
         clockOuts,
         totalRecords: logs.length,
         manualUpdates,
+        ptoAllowance: pto.allowance,
+        ptoUnit: pto.unit,
+        ptoUsed: pto.used,
+        ptoRemaining: pto.remaining,
+        uncoveredAbsences: pto.uncovered,
         firstRecord: first ? `${first.date} ${first.time}` : "",
         lastRecord: last ? `${last.date} ${last.time}` : "",
         flags
@@ -1794,6 +2199,8 @@
         staffCount: staffReports.length,
         recordCount: staffReports.reduce((sum, row) => sum + row.totalRecords, 0),
         manualUpdateCount: staffReports.reduce((sum, row) => sum + row.manualUpdates, 0),
+        ptoUsedCount: staffReports.reduce((sum, row) => sum + row.ptoUsed, 0),
+        uncoveredAbsenceCount: staffReports.reduce((sum, row) => sum + row.uncoveredAbsences, 0),
         exceptionCount: staffReports.reduce((sum, row) => sum + row.flags.length, 0),
         staffReports
       };
@@ -1807,11 +2214,13 @@
           <td>${esc(row.clockOuts)}</td>
           <td>${esc(row.totalRecords)}</td>
           <td>${esc(row.manualUpdates)}</td>
+          <td>${esc(row.ptoUsed)} ${esc(ptoUnitLabel(row.ptoUnit, row.ptoUsed))}</td>
+          <td>${esc(row.uncoveredAbsences)}</td>
           <td>${esc(row.firstRecord || "")}</td>
           <td>${esc(row.lastRecord || "")}</td>
           <td>${esc((row.flags || []).join(", ") || "Clear")}</td>
         </tr>
-      `).join("") || `<tr><td colspan="8">No active staff found for this group.</td></tr>`;
+      `).join("") || `<tr><td colspan="10">No active staff found for this group.</td></tr>`;
     }
 
     function openMonthlyReport(review) {
@@ -1826,12 +2235,14 @@
             <div><strong>Staff</strong><span>${esc(review.staffCount || 0)}</span></div>
             <div><strong>Records</strong><span>${esc(review.recordCount || 0)}</span></div>
             <div><strong>Manual updates</strong><span>${esc(review.manualUpdateCount || 0)}</span></div>
+            <div><strong>PTO used</strong><span>${esc(review.ptoUsedCount || 0)}</span></div>
+            <div><strong>Uncovered</strong><span>${esc(review.uncoveredAbsenceCount || 0)}</span></div>
             <div><strong>Exceptions</strong><span>${esc(review.exceptionCount || 0)}</span></div>
           </div>
           <p class="small">Authorized${reviewedAt ? ` ${esc(reviewedAt.toLocaleString())}` : ""} by ${esc(review.supervisorName || "supervisor")}.</p>
           <div class="table-wrap">
             <table class="report-table">
-              <thead><tr><th>Staff</th><th>In</th><th>Out</th><th>Total</th><th>Manual</th><th>First Record</th><th>Last Record</th><th>Notes</th></tr></thead>
+              <thead><tr><th>Staff</th><th>In</th><th>Out</th><th>Total</th><th>Manual</th><th>PTO Used</th><th>Uncovered</th><th>First Record</th><th>Last Record</th><th>Notes</th></tr></thead>
               <tbody>${renderReportRows(review.staffReports || [])}</tbody>
             </table>
           </div>
@@ -1870,7 +2281,7 @@
             <div class="review-card">
               <strong>${esc(groupName(groupId))}</strong>
               <span>${review ? "Monthly report submitted and authorized." : "Monthly report pending."}</span>
-              <span class="small">${esc(report.staffCount)} staff · ${esc(report.recordCount)} records · ${esc(report.exceptionCount)} exceptions</span>
+              <span class="small">${esc(report.staffCount)} staff · ${esc(report.recordCount)} records · ${esc(report.ptoUsedCount)} PTO used · ${esc(report.uncoveredAbsenceCount)} uncovered</span>
               <span class="small">${reviewedAt ? reviewedAt.toLocaleString() : `Month: ${esc(month)}`}</span>
               <button class="outline" data-preview-report="${esc(groupId)}">Preview Report</button>
               <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Resubmit Report" : "Submit End-of-Month Report"}</button>
@@ -1916,6 +2327,8 @@
       $("staffName").value = "";
       renderStaffGroupChecks(["preschool"]);
       $("staffActive").value = "true";
+      $("staffPtoAllowance").value = "";
+      $("staffPtoUnit").value = "auto";
       $("staffPinPreview").value = "";
       $("staffSubmit").textContent = "Add Staff";
     }
@@ -2002,6 +2415,7 @@
       await ensureDefaults();
       onSnapshot(doc(state.db, "settings", "app"), (snapshot) => {
         state.settings = snapshot.exists() ? snapshot.data() : {};
+        renderAll();
       });
       listenToCollection("staff", "staff");
       listenToCollection("users", "users");
@@ -2013,6 +2427,7 @@
       resetUserForm();
       resetStaffForm();
       $("recordMonth").value = monthKey();
+      $("timecardMonth").value = monthKey();
       $("reviewMonth").value = monthKey();
       showView("worker");
     }
@@ -2190,6 +2605,8 @@
         $("staffName").value = person.name;
         renderStaffGroupChecks(staffGroupIds(person));
         $("staffActive").value = String(person.active !== false);
+        $("staffPtoAllowance").value = ptoAllowanceForStaff(person) || "";
+        $("staffPtoUnit").value = person.ptoUnit || "auto";
         $("staffPinPreview").value = person.pin || "";
         $("staffSubmit").textContent = "Save Staff";
         setAdminTab("staff");
@@ -2314,6 +2731,8 @@
         groupId: groupIds[0],
         groupIds,
         active: $("staffActive").value === "true",
+        ptoAllowance: numberValue($("staffPtoAllowance").value),
+        ptoUnit: $("staffPtoUnit").value,
         updatedAt: serverTimestamp()
       };
       if (id) {
@@ -2398,6 +2817,21 @@
       alert("Password updated.");
     });
 
+    $("calendarForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.hrUser?.role !== "director") return;
+      const dates = [...new Set($("nonSchoolDatesInput").value
+        .split(/[\s,]+/)
+        .map((value) => value.trim())
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
+        .sort();
+      await setDoc(doc(state.db, "settings", "app"), {
+        nonSchoolDates: dates,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      alert("Non-school dates saved.");
+    });
+
     $("staffCancel").addEventListener("click", resetStaffForm);
     $("userCancel").addEventListener("click", resetUserForm);
     $("userRole").addEventListener("change", syncUserRoleForm);
@@ -2409,6 +2843,10 @@
       renderLogRows();
     });
     ["recordMonth", "recordStaff", "recordTypeFilter"].forEach((id) => $(id).addEventListener("change", renderLogRows));
+    $("timecardMonth").addEventListener("change", renderTimecardView);
+    $("timecardStaffSearch").addEventListener("input", applyTimecardSearch);
+    $("timecardStaff").addEventListener("change", renderTimecardGroupOptions);
+    $("timecardGroup").addEventListener("change", renderTimecardView);
     document.addEventListener("change", (event) => {
       if (event.target?.id === "recordStaffEdit") updateRecordGroupEditOptions();
     });
