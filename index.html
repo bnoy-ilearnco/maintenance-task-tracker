@@ -1231,7 +1231,7 @@
     }
 
     function isSchoolDay(dateKey, groupId = "") {
-      return !isWeekendDate(dateKey) && !normalizedNonSchoolDates(groupId).includes(dateKey);
+      const firstSchoolDate = { preschool: "2026-09-04", elementary: "2026-09-02", highschool: "2026-09-02" }[groupId]; return (!firstSchoolDate || dateKey >= firstSchoolDate) && !isWeekendDate(dateKey) && !normalizedNonSchoolDates(groupId).includes(dateKey);
     }
 
     function normalizeUsername(username) {
