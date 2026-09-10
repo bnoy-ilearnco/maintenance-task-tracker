@@ -578,7 +578,12 @@
       background: #ffe9e9;
     }
 
-    .timecard-day.non-school,
+    .timecard-day.non-school {
+      border-left-color: #94a3b8;
+      background: #e5e7eb;
+      color: #64748b;
+    }
+
     .timecard-day.future {
       background: #f8fafc;
       color: var(--muted);
@@ -918,7 +923,7 @@
               <div class="section-head">
                 <div>
                   <h2>Monthly Time Cards</h2>
-                  <p class="small">Search a staff member and review the month by division. Green days have clock records, orange days use PTO, and red days are school-day absences after PTO is used up.</p>
+                  <p class="small">Search a staff member and review the month by division. Green days have clock records, orange days use PTO, red days are uncovered absences, and gray days are weekends or division-specific no-session dates.</p>
                 </div>
               </div>
               <div class="timecard-tools">
@@ -965,11 +970,21 @@
               </form>
               <form class="form-grid director-only" id="calendarForm">
                 <div class="full">
-                  <label>Non-School Dates</label>
-                  <p class="small">Enter one date per line. These dates are skipped when PTO and uncovered absences are calculated.</p>
+                  <label>Preschool and Elementary No-Session Dates</label>
+                  <p class="small">These dates come from the 2026-2027 Preschool and Elementary calendar. Enter one date per line.</p>
+                  <textarea id="preschoolElementaryDatesInput" placeholder="2026-09-11&#10;2026-09-21"></textarea>
+                </div>
+                <div class="full">
+                  <label>High School No-Session Dates</label>
+                  <p class="small">These dates come from the 2026-2027 High School calendar. Enter one date per line.</p>
+                  <textarea id="highSchoolDatesInput" placeholder="2026-09-11&#10;2026-09-21"></textarea>
+                </div>
+                <div class="full">
+                  <label>Additional School-Wide Closures</label>
+                  <p class="small">Optional dates entered here apply to every division, including Learning Center and Other staff.</p>
                   <textarea id="nonSchoolDatesInput" placeholder="2026-09-07&#10;2026-09-23"></textarea>
                 </div>
-                <button class="blue" type="submit">Save Calendar Dates</button>
+                <button class="blue" type="submit">Save Division Calendars</button>
               </form>
             </section>
           </div>
@@ -1017,6 +1032,46 @@
       { id: "learningcenter", name: "Learning Center" },
       { id: "other", name: "Other staff" }
     ];
+
+    const BUILT_IN_NO_SESSION_RANGES = {
+      preschool: [
+        ["2026-09-11", "2026-09-11"],
+        ["2026-09-21", "2026-09-21"],
+        ["2026-09-24", "2026-10-05"],
+        ["2026-11-11", "2026-11-11"],
+        ["2026-12-04", "2026-12-08"],
+        ["2027-01-28", "2027-02-02"],
+        ["2027-02-15", "2027-02-15"],
+        ["2027-03-23", "2027-03-24"],
+        ["2027-04-19", "2027-04-30"],
+        ["2027-05-31", "2027-05-31"],
+        ["2027-06-10", "2027-06-11"]
+      ],
+      elementary: [
+        ["2026-09-11", "2026-09-11"],
+        ["2026-09-21", "2026-09-21"],
+        ["2026-09-24", "2026-10-05"],
+        ["2026-11-11", "2026-11-11"],
+        ["2026-12-04", "2026-12-08"],
+        ["2027-01-28", "2027-02-02"],
+        ["2027-02-15", "2027-02-15"],
+        ["2027-03-23", "2027-03-24"],
+        ["2027-04-19", "2027-04-30"],
+        ["2027-05-31", "2027-05-31"],
+        ["2027-06-10", "2027-06-11"]
+      ],
+      highschool: [
+        ["2026-09-11", "2026-09-13"],
+        ["2026-09-21", "2026-10-05"],
+        ["2026-12-04", "2026-12-08"],
+        ["2027-01-27", "2027-02-02"],
+        ["2027-02-15", "2027-02-15"],
+        ["2027-03-22", "2027-03-24"],
+        ["2027-04-12", "2027-04-30"],
+        ["2027-05-30", "2027-05-31"],
+        ["2027-06-10", "2027-06-11"]
+      ]
+    };
 
     const state = {
       db: null,
@@ -1148,13 +1203,35 @@
       return day === 0 || day === 6;
     }
 
-    function normalizedNonSchoolDates() {
-      const values = Array.isArray(state.settings?.nonSchoolDates) ? state.settings.nonSchoolDates : [];
-      return [...new Set(values.map((value) => String(value).trim()).filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
+    function normalizedDateList(values) {
+      return [...new Set((Array.isArray(values) ? values : [])
+        .map((value) => String(value).trim())
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))].sort();
     }
 
-    function isSchoolDay(dateKey) {
-      return !isWeekendDate(dateKey) && !normalizedNonSchoolDates().includes(dateKey);
+    function builtInNoSessionDates(groupId) {
+      return (BUILT_IN_NO_SESSION_RANGES[groupId] || [])
+        .flatMap(([startKey, endKey]) => dateKeysBetween(startKey, endKey));
+    }
+
+    function divisionNoSessionDates(groupId) {
+      const configured = state.settings?.nonSchoolDatesByGroup;
+      if (configured && Object.prototype.hasOwnProperty.call(configured, groupId)) {
+        return normalizedDateList(configured[groupId]);
+      }
+      return normalizedDateList(builtInNoSessionDates(groupId));
+    }
+
+    function normalizedNonSchoolDates(groupId = "") {
+      const values = Array.isArray(state.settings?.nonSchoolDates) ? state.settings.nonSchoolDates : [];
+      return normalizedDateList([
+        ...values,
+        ...(groupId ? divisionNoSessionDates(groupId) : [])
+      ]);
+    }
+
+    function isSchoolDay(dateKey, groupId = "") {
+      return !isWeekendDate(dateKey) && !normalizedNonSchoolDates(groupId).includes(dateKey);
     }
 
     function normalizeUsername(username) {
@@ -1502,6 +1579,72 @@
 
     function selectedStaffGroups() {
       return [...document.querySelectorAll("input[name='staffGroup']:checked")].map((input) => input.value);
+    }
+
+    function staffEditForm(person) {
+      const groups = staffGroupIds(person);
+      return `
+        <form id="staffEditForm" class="form-grid">
+          <input type="hidden" id="staffEditId" value="${esc(person.id)}">
+          <label>Name<input id="staffEditName" value="${esc(person.name || "")}" required></label>
+          <label>PIN<input value="${esc(person.pin || "Missing")}" readonly></label>
+          <div class="full">
+            <label>Groups</label>
+            <p class="small">Choose every division this staff member belongs to.</p>
+            <div class="check-grid">
+              ${GROUPS.map((group) => `
+                <label class="check-option">
+                  <input type="checkbox" name="staffEditGroup" value="${group.id}" ${groups.includes(group.id) ? "checked" : ""}>
+                  <span>${esc(group.name)}</span>
+                </label>
+              `).join("")}
+            </div>
+          </div>
+          <label>Status
+            <select id="staffEditActive">
+              <option value="true" ${person.active !== false ? "selected" : ""}>Active</option>
+              <option value="false" ${person.active === false ? "selected" : ""}>Inactive</option>
+            </select>
+          </label>
+          <label>PTO Allowance<input id="staffEditPtoAllowance" type="number" min="0" step="0.25" value="${esc(ptoAllowanceForStaff(person) || "")}"></label>
+          <label>PTO Unit
+            <select id="staffEditPtoUnit">
+              <option value="auto" ${!person.ptoUnit || person.ptoUnit === "auto" ? "selected" : ""}>Auto by group</option>
+              <option value="days" ${person.ptoUnit === "days" ? "selected" : ""}>Days</option>
+              <option value="periods" ${person.ptoUnit === "periods" ? "selected" : ""}>Periods</option>
+            </select>
+          </label>
+        </form>
+      `;
+    }
+
+    async function saveStaffFromModal() {
+      if (state.hrUser?.role !== "director") {
+        closeModal();
+        return;
+      }
+      const id = $("staffEditId")?.value;
+      const person = state.staff.find((item) => item.id === id);
+      const groupIds = [...document.querySelectorAll("input[name='staffEditGroup']:checked")].map((input) => input.value);
+      const name = $("staffEditName")?.value.trim();
+      if (!person || !name) {
+        alert("Enter the staff member's name.");
+        return;
+      }
+      if (!groupIds.length) {
+        alert("Choose at least one group for this staff member.");
+        return;
+      }
+      await updateDoc(doc(state.db, "staff", id), {
+        name,
+        groupId: groupIds[0],
+        groupIds,
+        active: $("staffEditActive").value === "true",
+        ptoAllowance: numberValue($("staffEditPtoAllowance").value),
+        ptoUnit: $("staffEditPtoUnit").value,
+        updatedAt: serverTimestamp()
+      });
+      closeModal();
     }
 
     function renderUserGroupChecks(selected = [], options = {}) {
@@ -2044,7 +2187,13 @@
 
     function renderSettings() {
       if ($("nonSchoolDatesInput") && document.activeElement !== $("nonSchoolDatesInput")) {
-        $("nonSchoolDatesInput").value = normalizedNonSchoolDates().join("\n");
+        $("nonSchoolDatesInput").value = normalizedDateList(state.settings?.nonSchoolDates).join("\n");
+      }
+      if ($("preschoolElementaryDatesInput") && document.activeElement !== $("preschoolElementaryDatesInput")) {
+        $("preschoolElementaryDatesInput").value = divisionNoSessionDates("elementary").join("\n");
+      }
+      if ($("highSchoolDatesInput") && document.activeElement !== $("highSchoolDatesInput")) {
+        $("highSchoolDatesInput").value = divisionNoSessionDates("highschool").join("\n");
       }
     }
 
@@ -2107,6 +2256,12 @@
           detail: ""
         };
 
+        if (!isSchoolDay(dateKey, groupId)) {
+          entry.label = isWeekendDate(dateKey) ? "Weekend" : "No sessions";
+          entry.detail = logs.length ? clockTextForDay(logs) : (isWeekendDate(dateKey) ? "" : `${groupName(groupId)} calendar`);
+          return entry;
+        }
+
         if (dateKey > today) {
           entry.status = "future";
           entry.label = "Not due yet";
@@ -2119,8 +2274,6 @@
           entry.detail = clockTextForDay(logs);
           return entry;
         }
-
-        if (!isSchoolDay(dateKey)) return entry;
 
         const units = ptoUnitsForAbsence(person, groupId, dateKey);
         if (used + units <= allowance) {
@@ -2601,16 +2754,15 @@
       }
       if (target.dataset.editStaff) {
         const person = state.staff.find((item) => item.id === target.dataset.editStaff);
-        $("staffId").value = person.id;
-        $("staffName").value = person.name;
-        renderStaffGroupChecks(staffGroupIds(person));
-        $("staffActive").value = String(person.active !== false);
-        $("staffPtoAllowance").value = ptoAllowanceForStaff(person) || "";
-        $("staffPtoUnit").value = person.ptoUnit || "auto";
-        $("staffPinPreview").value = person.pin || "";
-        $("staffSubmit").textContent = "Save Staff";
-        setAdminTab("staff");
+        if (person && state.hrUser?.role === "director") {
+          openModal(
+            "Edit Staff Member",
+            staffEditForm(person),
+            `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveStaffEditBtn">Save Changes</button>`
+          );
+        }
       }
+      if (target.id === "saveStaffEditBtn") await saveStaffFromModal();
       if (target.dataset.pinStaff) {
         const person = state.staff.find((item) => item.id === target.dataset.pinStaff);
         await updateDoc(doc(state.db, "staff", person.id), { pin: generatePin(person.id), updatedAt: serverTimestamp() });
@@ -2758,6 +2910,12 @@
       resetStaffForm();
     });
 
+    document.addEventListener("submit", async (event) => {
+      if (event.target.id !== "staffEditForm") return;
+      event.preventDefault();
+      await saveStaffFromModal();
+    });
+
     $("userForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (state.hrUser?.role !== "director") return;
@@ -2820,16 +2978,24 @@
     $("calendarForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (state.hrUser?.role !== "director") return;
-      const dates = [...new Set($("nonSchoolDatesInput").value
-        .split(/[\s,]+/)
-        .map((value) => value.trim())
-        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
-        .sort();
+      const parseDates = (inputId) => normalizedDateList($(inputId).value.split(/[\s,]+/));
+      const preschoolElementaryDates = parseDates("preschoolElementaryDatesInput");
+      const highSchoolDates = parseDates("highSchoolDatesInput");
+      const dates = parseDates("nonSchoolDatesInput");
+      const existingByGroup = state.settings?.nonSchoolDatesByGroup && typeof state.settings.nonSchoolDatesByGroup === "object"
+        ? state.settings.nonSchoolDatesByGroup
+        : {};
       await setDoc(doc(state.db, "settings", "app"), {
         nonSchoolDates: dates,
+        nonSchoolDatesByGroup: {
+          ...existingByGroup,
+          preschool: preschoolElementaryDates,
+          elementary: preschoolElementaryDates,
+          highschool: highSchoolDates
+        },
         updatedAt: serverTimestamp()
       }, { merge: true });
-      alert("Non-school dates saved.");
+      alert("Division calendars saved.");
     });
 
     $("staffCancel").addEventListener("click", resetStaffForm);
