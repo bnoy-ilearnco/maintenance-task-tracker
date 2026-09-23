@@ -2177,7 +2177,7 @@
       $("timecardSummary").innerHTML = `
         <div><span>Staff Member</span><strong>${esc(person.name)}</strong></div>
         <div><span>Division</span><strong>${esc(groupName(groupId))}</strong></div>
-        <div><span>PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
+        <div><span>Monthly PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
         <div><span>PTO Used</span><strong>${esc(ledger.used)} ${esc(ptoUnitLabel(ledger.unit, ledger.used))}</strong></div>
         <div><span>Remaining</span><strong>${esc(ledger.remaining)} ${esc(ptoUnitLabel(ledger.unit, ledger.remaining))}</strong></div>
         <div><span>Uncovered</span><strong>${esc(ledger.uncovered)} school days</strong></div>
@@ -2238,7 +2238,7 @@
       const today = todayKey();
       const allowance = ptoAllowanceForStaff(person, groupId);
       const unit = ptoUnitForStaff(person, groupId);
-      const start = schoolYearStartForMonth(month);
+      const start = `${month}-01`;
       const monthDays = monthDateKeys(month);
       const end = monthDays[monthDays.length - 1] || today;
       let used = 0;
