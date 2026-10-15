@@ -499,9 +499,13 @@
 
     .timecard-tools {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
       gap: 12px;
       align-items: end;
+    }
+
+    .timecard-tools > button {
+      min-height: 44px;
     }
 
     .timecard-summary {
@@ -598,6 +602,12 @@
       line-height: 1.35;
     }
 
+    .timecard-day .timecard-day-action {
+      min-height: 34px;
+      padding: 6px 8px;
+      font-size: .78rem;
+    }
+
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -632,6 +642,17 @@
     .muted { color: var(--muted); }
     .hidden { display: none !important; }
     .director-only.hidden-by-role { display: none !important; }
+
+    @media (max-width: 980px) {
+      .admin-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .admin-nav {
+        position: static;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
 
     @media (max-width: 760px) {
       .topbar {
@@ -923,7 +944,7 @@
               <div class="section-head">
                 <div>
                   <h2>Monthly Time Cards</h2>
-                  <p class="small">Search a staff member and review the month by division. Green days have clock records, orange days use PTO, red days are uncovered absences, and gray days are weekends or division-specific no-session dates.</p>
+                  <p class="small">Search a staff member and review the month by division. Supervisors can schedule approved PTO before the date occurs. Green days have clock records, orange days use or reserve PTO, red days are uncovered absences, and gray days are weekends or division-specific no-session dates.</p>
                 </div>
               </div>
               <div class="timecard-tools">
@@ -932,6 +953,7 @@
                 <datalist id="timecardStaffList"></datalist>
                 <label>Staff Member<select id="timecardStaff"></select></label>
                 <label>Division<select id="timecardGroup"></select></label>
+                <button class="blue" id="schedulePtoBtn">Schedule PTO</button>
               </div>
               <div class="timecard-summary" id="timecardSummary"></div>
               <div class="timecard-grid" id="timecardGrid"></div>
@@ -1030,8 +1052,15 @@
       { id: "elementary", name: "Elementary school staff" },
       { id: "highschool", name: "High School Staff" },
       { id: "learningcenter", name: "Learning Center" },
-      { id: "maintenance", name: "Maintenance" }, { id: "other", name: "Other staff" }
+      { id: "maintenance", name: "Maintenance" },
+      { id: "other", name: "Other staff" }
     ];
+
+    const FIRST_SCHOOL_DATES = {
+      preschool: "2026-09-04",
+      elementary: "2026-09-02",
+      highschool: "2026-09-02"
+    };
 
     const BUILT_IN_NO_SESSION_RANGES = {
       preschool: [
@@ -1082,6 +1111,7 @@
       staff: [],
       users: [],
       logs: [],
+      ptoEntries: [],
       reviews: [],
       notifications: [],
       settings: {},
@@ -1231,7 +1261,10 @@
     }
 
     function isSchoolDay(dateKey, groupId = "") {
-      const firstSchoolDate = { preschool: "2026-09-04", elementary: "2026-09-02", highschool: "2026-09-02" }[groupId]; return (!firstSchoolDate || dateKey >= firstSchoolDate) && !isWeekendDate(dateKey) && !normalizedNonSchoolDates(groupId).includes(dateKey);
+      const firstSchoolDate = FIRST_SCHOOL_DATES[groupId];
+      return (!firstSchoolDate || dateKey >= firstSchoolDate)
+        && !isWeekendDate(dateKey)
+        && !normalizedNonSchoolDates(groupId).includes(dateKey);
     }
 
     function normalizeUsername(username) {
@@ -2170,6 +2203,7 @@
             <strong>${esc(dayNumber)}</strong>
             <span>${esc(entry.label)}</span>
             ${entry.detail ? `<span>${entry.detail}</span>` : ""}
+            ${entry.scheduledPto ? `<button class="outline timecard-day-action" data-cancel-pto="${esc(entry.scheduledPto.id)}">Remove PTO</button>` : ""}
           </div>
         `;
       }).join("");
@@ -2221,6 +2255,25 @@
         .sort((a, b) => (a.localMs || 0) - (b.localMs || 0));
     }
 
+    function ptoEntriesForStaffGroupMonth(staffId, groupId, month) {
+      return state.ptoEntries
+        .filter((entry) => entry.status !== "canceled")
+        .filter((entry) => entry.staffId === staffId)
+        .filter((entry) => entry.groupId === groupId)
+        .filter((entry) => entry.monthKey === month || String(entry.dateKey || "").startsWith(month))
+        .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+    }
+
+    function scheduledPtoRemaining(person, groupId, month, excludeDateKey = "") {
+      const allowance = ptoAllowanceForStaff(person, groupId);
+      const reserved = ptoEntriesForStaffGroupMonth(person.id, groupId, month).reduce((total, entry) => {
+        if (entry.dateKey === excludeDateKey || !isSchoolDay(entry.dateKey, groupId)) return total;
+        const hasClockIn = logsForStaffGroupDate(person.id, groupId, entry.dateKey).some((log) => log.type === "in");
+        return hasClockIn ? total : total + numberValue(entry.units || 1);
+      }, 0);
+      return Math.max(allowance - reserved, 0);
+    }
+
     function clockTextForDay(logs) {
       const clockIns = logs.filter((log) => log.type === "in").map((log) => formatDateTime(log.localMs || Date.now()).time);
       const clockOuts = logs.filter((log) => log.type === "out").map((log) => formatDateTime(log.localMs || Date.now()).time);
@@ -2241,16 +2294,25 @@
       const start = `${month}-01`;
       const monthDays = monthDateKeys(month);
       const end = monthDays[monthDays.length - 1] || today;
-      let used = 0;
+      const scheduledByDate = new Map(ptoEntriesForStaffGroupMonth(person.id, groupId, month).map((entry) => [entry.dateKey, entry]));
+      const scheduledTotal = monthDays.reduce((total, dateKey) => {
+        const scheduledPto = scheduledByDate.get(dateKey);
+        const hasClockIn = logsForStaffGroupDate(person.id, groupId, dateKey).some((log) => log.type === "in");
+        if (!scheduledPto || hasClockIn || !isSchoolDay(dateKey, groupId)) return total;
+        return total + numberValue(scheduledPto.units || 1);
+      }, 0);
+      const automaticBudget = Math.max(allowance - scheduledTotal, 0);
+      let scheduledUsed = 0;
+      let automaticUsed = 0;
       let uncovered = 0;
       const allEntries = dateKeysBetween(start, end).map((dateKey) => {
         const logs = logsForStaffGroupDate(person.id, groupId, dateKey);
         const hasClockIn = logs.some((log) => log.type === "in");
+        const scheduledPto = scheduledByDate.get(dateKey);
         const entry = {
           dateKey,
           logs,
-          usedBefore: used,
-          usedAfter: used,
+          scheduledPto,
           status: "non-school",
           label: "Non-school day",
           detail: ""
@@ -2262,26 +2324,48 @@
           return entry;
         }
 
+        if (hasClockIn) {
+          entry.status = "present";
+          entry.label = "Clocked in";
+          entry.detail = scheduledPto
+            ? `${clockTextForDay(logs)}; scheduled PTO was not charged`
+            : clockTextForDay(logs);
+          return entry;
+        }
+
+        if (scheduledPto) {
+          const units = numberValue(scheduledPto.units || 1);
+          if (scheduledUsed + units <= allowance) {
+            scheduledUsed += units;
+            entry.status = "pto";
+            entry.label = `${dateKey > today ? "PTO scheduled" : "PTO used"} (${units} ${ptoUnitLabel(unit, units)})`;
+            entry.detail = [
+              scheduledPto.createdByName ? `Approved by ${scheduledPto.createdByName}` : "Approved in advance",
+              scheduledPto.note || ""
+            ].filter(Boolean).join("; ");
+            return entry;
+          }
+
+          uncovered += 1;
+          entry.status = "uncovered";
+          entry.label = "Scheduled PTO exceeds allowance";
+          entry.detail = `${units} ${ptoUnitLabel(unit, units)} requested`;
+          return entry;
+        }
+
         if (dateKey > today) {
           entry.status = "future";
           entry.label = "Not due yet";
           return entry;
         }
 
-        if (hasClockIn) {
-          entry.status = "present";
-          entry.label = "Clocked in";
-          entry.detail = clockTextForDay(logs);
-          return entry;
-        }
-
         const units = ptoUnitsForAbsence(person, groupId, dateKey);
-        if (used + units <= allowance) {
-          used += units;
-          entry.usedAfter = used;
+        if (automaticUsed + units <= automaticBudget) {
+          automaticUsed += units;
           entry.status = "pto";
           entry.label = `PTO used (${units} ${ptoUnitLabel(unit, units)})`;
-          entry.detail = `${Math.max(allowance - used, 0)} ${ptoUnitLabel(unit, allowance - used)} remaining`;
+          const remaining = Math.max(allowance - scheduledTotal - automaticUsed, 0);
+          entry.detail = `${remaining} ${ptoUnitLabel(unit, remaining)} remaining after scheduled PTO`;
           return entry;
         }
 
@@ -2292,6 +2376,7 @@
         return entry;
       });
 
+      const used = scheduledUsed + automaticUsed;
       return {
         allowance,
         unit,
@@ -2300,6 +2385,101 @@
         uncovered,
         entries: allEntries.filter((entry) => entry.dateKey.startsWith(month))
       };
+    }
+
+    function defaultScheduledPtoDate(month, groupId) {
+      const days = monthDateKeys(month);
+      return days.find((dateKey) => dateKey > todayKey() && isSchoolDay(dateKey, groupId))
+        || days.find((dateKey) => isSchoolDay(dateKey, groupId))
+        || todayKey();
+    }
+
+    function openSchedulePtoModal() {
+      const person = state.staff.find((item) => item.id === $("timecardStaff").value);
+      const groupId = $("timecardGroup").value;
+      const month = $("timecardMonth").value || monthKey();
+      if (!person || !groupId || !staffGroupIds(person).includes(groupId) || !canSeeGroup(groupId)) {
+        alert("Choose a staff member and division first.");
+        return;
+      }
+      const unit = ptoUnitForStaff(person, groupId);
+      const defaultDate = defaultScheduledPtoDate(month, groupId);
+      const availableToSchedule = scheduledPtoRemaining(person, groupId, month, defaultDate);
+      const step = unit === "periods" ? "1" : "0.25";
+      openModal(
+        "Schedule PTO",
+        `
+          <form id="scheduledPtoForm" class="form-grid">
+            <input type="hidden" id="scheduledPtoStaffId" value="${esc(person.id)}">
+            <input type="hidden" id="scheduledPtoGroupId" value="${esc(groupId)}">
+            <label>Staff Member<input value="${esc(person.name)}" readonly></label>
+            <label>Division<input value="${esc(groupName(groupId))}" readonly></label>
+            <label>Date<input id="scheduledPtoDate" type="date" value="${esc(defaultDate)}" required></label>
+            <label>PTO Amount (${esc(ptoUnitLabel(unit))})<input id="scheduledPtoUnits" type="number" min="${step}" step="${step}" value="1" required></label>
+            <label class="full">Note<textarea id="scheduledPtoNote" placeholder="Optional reason or approval note"></textarea></label>
+            <p class="small full">${esc(availableToSchedule)} ${esc(ptoUnitLabel(unit, availableToSchedule))} are available to schedule for ${esc(month)}. Approved dates reserve PTO before automatic absence assignments.</p>
+          </form>
+        `,
+        `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveScheduledPtoBtn">Schedule PTO</button>`
+      );
+    }
+
+    async function saveScheduledPtoFromModal() {
+      const person = state.staff.find((item) => item.id === $("scheduledPtoStaffId")?.value);
+      const groupId = $("scheduledPtoGroupId")?.value;
+      const dateKey = $("scheduledPtoDate")?.value;
+      const units = numberValue($("scheduledPtoUnits")?.value);
+      if (!person || !groupId || !dateKey || !units || !staffGroupIds(person).includes(groupId) || !canSeeGroup(groupId)) {
+        alert("Complete the PTO details for a staff member in your division.");
+        return;
+      }
+      if (!isSchoolDay(dateKey, groupId)) {
+        alert("That date is not a school day for this division.");
+        return;
+      }
+
+      const month = dateKey.slice(0, 7);
+      const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
+      const available = scheduledPtoRemaining(person, groupId, month, dateKey);
+      if (units > available) {
+        const unit = ptoUnitForStaff(person, groupId);
+        alert(`Only ${available} ${ptoUnitLabel(unit, available)} are available to schedule for ${month}.`);
+        return;
+      }
+
+      const entryId = `${person.id}__${groupId}__${dateKey}`;
+      await setDoc(doc(state.db, "ptoEntries", entryId), {
+        staffId: person.id,
+        staffName: person.name,
+        groupId,
+        dateKey,
+        monthKey: month,
+        units,
+        unit: ptoUnitForStaff(person, groupId),
+        note: $("scheduledPtoNote")?.value.trim() || "",
+        status: "scheduled",
+        createdBy: state.hrUser.id,
+        createdByName: state.hrUser.name,
+        createdAt: existing?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        canceledAt: null,
+        canceledBy: null,
+        canceledByName: null
+      }, { merge: true });
+      $("timecardMonth").value = month;
+      closeModal();
+    }
+
+    async function cancelScheduledPto(entryId) {
+      const entry = state.ptoEntries.find((item) => item.id === entryId && item.status !== "canceled");
+      if (!entry || !canSeeGroup(entry.groupId)) return;
+      await updateDoc(doc(state.db, "ptoEntries", entry.id), {
+        status: "canceled",
+        canceledAt: serverTimestamp(),
+        canceledBy: state.hrUser.id,
+        canceledByName: state.hrUser.name,
+        updatedAt: serverTimestamp()
+      });
     }
 
     function staffForGroup(groupId) {
@@ -2573,6 +2753,7 @@
       listenToCollection("staff", "staff");
       listenToCollection("users", "users");
       listenToCollection("logs", "clockLogs");
+      listenToCollection("ptoEntries", "ptoEntries");
       listenToCollection("reviews", "monthlyReviews");
       listenToCollection("notifications", "notifications");
       renderStaffGroupChecks(["preschool"]);
@@ -2811,6 +2992,9 @@
         }
       }
       if (target.id === "saveRecordBtn") await saveRecordFromModal();
+      if (target.id === "schedulePtoBtn") openSchedulePtoModal();
+      if (target.id === "saveScheduledPtoBtn") await saveScheduledPtoFromModal();
+      if (target.dataset.cancelPto && confirm("Remove this scheduled PTO entry?")) await cancelScheduledPto(target.dataset.cancelPto);
       if (target.dataset.previewReport) {
         const month = $("reviewMonth").value || monthKey();
         openMonthlyReport({
