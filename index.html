@@ -950,7 +950,7 @@
               <div class="section-head">
                 <div>
                   <h2>Monthly Time Cards</h2>
-                  <p class="small">Search a staff member and review the month by division. Division supervisors label missed school days as Uncovered Absence, Apply PTO, or Apply PTOx2. Green days have clock records, orange days use PTO, red days are uncovered absences, blue days still need a label, and gray days are weekends or division-specific no-session dates.</p>
+                  <p class="small">Search a staff member and review the month by division. Division supervisors can schedule time off in advance or label a missed school day as Uncovered Absence, Apply PTO, or Apply PTOx2. Green days have clock records, orange days use PTO, red days are uncovered absences, blue days still need a label, and gray days are weekends or division-specific no-session dates.</p>
                 </div>
               </div>
               <div class="timecard-tools">
@@ -959,6 +959,7 @@
                 <datalist id="timecardStaffList"></datalist>
                 <label>Staff Member<select id="timecardStaff"></select></label>
                 <label>Division<select id="timecardGroup"></select></label>
+                <button class="blue" id="scheduleTimeOffBtn">Schedule Time Off</button>
               </div>
               <div class="timecard-summary" id="timecardSummary"></div>
               <div class="timecard-grid" id="timecardGrid"></div>
@@ -2191,6 +2192,7 @@
       const person = state.staff.find((item) => item.id === $("timecardStaff").value);
       const month = $("timecardMonth").value || monthKey();
       const groupId = $("timecardGroup").value;
+      $("scheduleTimeOffBtn").classList.toggle("hidden", !person || !groupId || !canManageAbsenceLabels(groupId));
       if (!person || !groupId) {
         $("timecardSummary").innerHTML = `<div><span>Status</span><strong>No staff selected</strong></div>`;
         $("timecardGrid").innerHTML = "";
@@ -2423,6 +2425,93 @@
       };
     }
 
+    function defaultScheduledTimeOffDate(month, groupId) {
+      const today = todayKey();
+      const preferred = monthDateKeys(month).find((dateKey) => dateKey > today && isSchoolDay(dateKey, groupId));
+      if (preferred) return preferred;
+      const end = new Date(`${today}T12:00:00`);
+      end.setDate(end.getDate() + 365);
+      return dateKeysBetween(today, dateKeyFromDate(end)).find((dateKey) => dateKey > today && isSchoolDay(dateKey, groupId)) || today;
+    }
+
+    function scheduledTimeOffOptions(available, selected = "uncovered") {
+      const choices = [
+        { value: "uncovered", label: "Uncovered Absence" },
+        ...(available >= 1 ? [{ value: "pto", label: "Apply PTO" }] : []),
+        ...(available >= 2 ? [{ value: "pto_x2", label: "Apply PTOx2" }] : [])
+      ];
+      const selectedValue = choices.some((choice) => choice.value === selected) ? selected : "uncovered";
+      return choices.map((choice) => `<option value="${choice.value}" ${choice.value === selectedValue ? "selected" : ""}>${choice.label}</option>`).join("");
+    }
+
+    function scheduledTimeOffContext(dateKey) {
+      const person = state.staff.find((item) => item.id === $("absenceLabelStaffId")?.value);
+      const groupId = $("absenceLabelGroupId")?.value;
+      const month = String(dateKey || "").slice(0, 7);
+      const existing = person && groupId && month
+        ? ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey)
+        : null;
+      const available = person && groupId && month ? ptoRemainingForMonth(person, groupId, month, dateKey) : 0;
+      return { person, groupId, month, existing, available };
+    }
+
+    function updateScheduledTimeOffOptions() {
+      const dateKey = $("absenceLabelDate")?.value;
+      const select = $("scheduledTimeOffLabel");
+      const balance = $("scheduledTimeOffBalance");
+      if (!dateKey || !select || !balance) return;
+      const { person, groupId, month, existing, available } = scheduledTimeOffContext(dateKey);
+      const selected = absenceClassification(existing) || select.value || "uncovered";
+      select.innerHTML = scheduledTimeOffOptions(available, selected);
+      if ($("absenceLabelNote")) $("absenceLabelNote").value = existing?.note || "";
+      if (!person || !groupId || !isSchoolDay(dateKey, groupId)) {
+        balance.textContent = "Choose a school day for this division.";
+        return;
+      }
+      const unit = ptoUnitForStaff(person, groupId);
+      balance.textContent = `${available} ${ptoUnitLabel(unit, available)} remain for ${month}. PTO choices that exceed the balance are not shown.`;
+    }
+
+    function openScheduleTimeOffModal() {
+      const person = state.staff.find((item) => item.id === $("timecardStaff").value);
+      const groupId = $("timecardGroup").value;
+      const month = $("timecardMonth").value || monthKey();
+      if (!person || !groupId || !staffGroupIds(person).includes(groupId) || !canManageAbsenceLabels(groupId)) {
+        alert("Only a supervisor assigned to this division can schedule time off.");
+        return;
+      }
+
+      const dateKey = defaultScheduledTimeOffDate(month, groupId);
+      const { existing, available } = scheduledTimeOffContextFor(person, groupId, dateKey);
+      const selected = absenceClassification(existing) || "uncovered";
+      const unit = ptoUnitForStaff(person, groupId);
+      openModal(
+        "Schedule Time Off",
+        `
+          <form id="scheduleTimeOffForm" class="form-grid">
+            <input type="hidden" id="absenceLabelStaffId" value="${esc(person.id)}">
+            <input type="hidden" id="absenceLabelGroupId" value="${esc(groupId)}">
+            <label>Staff Member<input value="${esc(person.name)}" readonly></label>
+            <label>Division<input value="${esc(groupName(groupId))}" readonly></label>
+            <label>Date<input id="absenceLabelDate" type="date" min="${esc(todayKey())}" value="${esc(dateKey)}" required></label>
+            <label>Time-Off Label<select id="scheduledTimeOffLabel" required>${scheduledTimeOffOptions(available, selected)}</select></label>
+            <label class="full">Note<textarea id="absenceLabelNote" placeholder="Optional note">${esc(existing?.note || "")}</textarea></label>
+            <p class="small full" id="scheduledTimeOffBalance">${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(dateKey.slice(0, 7))}. PTO choices that exceed the balance are not shown.</p>
+          </form>
+        `,
+        `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveScheduledTimeOffBtn">Schedule Time Off</button>`
+      );
+    }
+
+    function scheduledTimeOffContextFor(person, groupId, dateKey) {
+      const month = dateKey.slice(0, 7);
+      const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
+      return {
+        existing,
+        available: ptoRemainingForMonth(person, groupId, month, dateKey)
+      };
+    }
+
     function openAbsenceLabelModal(dateKey) {
       const person = state.staff.find((item) => item.id === $("timecardStaff").value);
       const groupId = $("timecardGroup").value;
@@ -2462,6 +2551,15 @@
         `,
         `<button class="outline" id="modalCancel">Cancel</button>${existing ? `<button class="outline" id="clearAbsenceLabelBtn">Clear Label</button>` : ""}<button class="red" data-save-absence-label="uncovered">Uncovered Absence</button>${ptoButtons}`
       );
+    }
+
+    async function saveScheduledTimeOffFromModal() {
+      const classification = $("scheduledTimeOffLabel")?.value;
+      if (!["uncovered", "pto", "pto_x2"].includes(classification)) {
+        alert("Choose a time-off label.");
+        return;
+      }
+      await saveAbsenceLabel(classification);
     }
 
     async function saveAbsenceLabel(classification) {
@@ -3042,6 +3140,8 @@
         }
       }
       if (target.id === "saveRecordBtn") await saveRecordFromModal();
+      if (target.id === "scheduleTimeOffBtn") openScheduleTimeOffModal();
+      if (target.id === "saveScheduledTimeOffBtn") await saveScheduledTimeOffFromModal();
       if (target.dataset.labelAbsence) openAbsenceLabelModal(target.dataset.labelAbsence);
       if (target.dataset.saveAbsenceLabel) await saveAbsenceLabel(target.dataset.saveAbsenceLabel);
       if (target.id === "clearAbsenceLabelBtn" && confirm("Clear this absence label?")) await clearAbsenceLabel();
@@ -3249,6 +3349,7 @@
     $("timecardGroup").addEventListener("change", renderTimecardView);
     document.addEventListener("change", (event) => {
       if (event.target?.id === "recordStaffEdit") updateRecordGroupEditOptions();
+      if (event.target?.id === "absenceLabelDate" && $("scheduledTimeOffLabel")) updateScheduledTimeOffOptions();
     });
     $("reviewMonth").addEventListener("change", () => {
       renderDashboard();
