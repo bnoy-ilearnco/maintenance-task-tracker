@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Staff Time Clock</title>
   <style>
     :root {
@@ -28,6 +28,8 @@
       background: var(--bg);
       color: var(--ink);
     }
+
+    body.review-open { overflow: hidden; }
 
     button, input, select, textarea { font: inherit; }
 
@@ -474,29 +476,300 @@
 
     .metric strong { font-size: 2rem; }
 
-    .report-summary {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
+    .review-workspace {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: var(--bg);
     }
 
-    .report-summary div {
+    .review-workspace.active { display: grid; }
+
+    .review-workspace-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px clamp(16px, 3vw, 34px);
+      padding-top: max(14px, env(safe-area-inset-top));
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(17, 24, 39, .07);
+    }
+
+    .review-workspace-heading {
+      min-width: 0;
       display: grid;
-      gap: 4px;
-      padding: 10px;
+      gap: 3px;
+    }
+
+    .review-workspace-heading h2 {
+      margin: 0;
+      font-size: clamp(1.2rem, 2.6vw, 1.75rem);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .review-workspace-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    .review-workspace-header button {
+      flex: 0 0 auto;
+      min-width: 92px;
+      padding: 10px 18px;
+    }
+
+    .review-workspace-scroll {
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-color: #aab4c3 transparent;
+      scrollbar-width: thin;
+    }
+
+    .review-workspace-scroll::-webkit-scrollbar { width: 10px; }
+    .review-workspace-scroll::-webkit-scrollbar-thumb {
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background: #aab4c3;
+      background-clip: padding-box;
+    }
+
+    .review-workspace-scroll:focus { outline: none; }
+    .review-workspace-scroll:focus-visible {
+      box-shadow: inset 0 0 0 2px rgba(37, 99, 235, .42);
+    }
+
+    .review-workspace-body {
+      width: min(1400px, 100%);
+      margin: 0 auto;
+      padding: clamp(16px, 3vw, 34px);
+      padding-bottom: max(32px, env(safe-area-inset-bottom));
+      display: grid;
+      gap: 20px;
+    }
+
+    .review-overview {
+      display: grid;
+      gap: 14px;
+    }
+
+    .review-overview-copy {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .review-overview-copy h3,
+    .staff-review-list-head h3,
+    .staff-review-person h3 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .review-overview-copy p,
+    .staff-review-list-head p,
+    .staff-review-person p {
+      margin: 0;
+    }
+
+    .review-summary-strip {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(110px, 1fr));
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #f8fafc;
+      background: #fff;
+      overflow: hidden;
     }
 
-    .report-summary span {
-      color: var(--dark);
-      font-size: 1.05rem;
+    .review-summary-item {
+      min-height: 92px;
+      padding: 14px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      border-right: 1px solid var(--line);
+    }
+
+    .review-summary-item:last-child { border-right: 0; }
+
+    .review-summary-item span {
+      color: var(--muted);
+      font-size: .78rem;
       font-weight: 800;
+      text-transform: uppercase;
     }
 
-    .report-table { min-width: 980px; }
+    .review-summary-item strong {
+      font-size: 1.45rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .review-summary-item.clear strong { color: #116032; }
+    .review-summary-item.documented strong { color: #854d0e; }
+    .review-summary-item.review strong { color: #1d4ed8; }
+    .review-summary-item.attention strong { color: #a92727; }
+
+    .review-legend {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      color: var(--muted);
+      font-size: .84rem;
+      font-weight: 700;
+    }
+
+    .review-legend-item,
+    .staff-review-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .review-legend-dot {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .review-legend-item.clear { color: #116032; }
+    .review-legend-item.documented { color: #854d0e; }
+    .review-legend-item.review { color: #1d4ed8; }
+    .review-legend-item.attention { color: #a92727; }
+
+    .staff-review-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .staff-review-list-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 4px;
+    }
+
+    .staff-review-row {
+      display: grid;
+      grid-template-columns: minmax(190px, 1.35fr) minmax(0, 3.65fr);
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .staff-review-row.status-clear {
+      border-color: #b7dec4;
+      background: #f2fbf5;
+    }
+
+    .staff-review-row.status-documented {
+      border-color: #eed59b;
+      background: #fffbeb;
+    }
+
+    .staff-review-row.status-review {
+      border-color: #b9d2fa;
+      background: #f1f6ff;
+    }
+
+    .staff-review-row.status-attention {
+      border-color: #efb8b8;
+      background: #fff3f3;
+    }
+
+    .staff-review-person {
+      min-width: 0;
+      display: grid;
+      align-content: start;
+      gap: 9px;
+    }
+
+    .staff-review-person h3 {
+      font-size: 1.05rem;
+      overflow-wrap: anywhere;
+    }
+
+    .staff-review-status {
+      width: fit-content;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .78);
+      font-size: .78rem;
+      font-weight: 850;
+    }
+
+    .staff-review-status.clear { color: #116032; }
+    .staff-review-status.documented { color: #854d0e; }
+    .staff-review-status.review { color: #1d4ed8; }
+    .staff-review-status.attention { color: #a92727; }
+
+    .staff-review-notes {
+      color: var(--dark);
+      font-size: .86rem;
+      line-height: 1.45;
+    }
+
+    .staff-review-facts {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(105px, 1fr));
+      gap: 8px;
+    }
+
+    .staff-review-fact {
+      min-width: 0;
+      padding: 9px 10px;
+      display: grid;
+      align-content: start;
+      gap: 3px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .72);
+    }
+
+    .staff-review-fact span {
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .staff-review-fact strong {
+      font-size: 1rem;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    .staff-review-fact small {
+      color: var(--muted);
+      font-size: .78rem;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .staff-review-empty {
+      padding: 28px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--muted);
+      text-align: center;
+    }
 
     .timecard-tools {
       display: grid;
@@ -658,6 +931,15 @@
         position: static;
         grid-template-columns: repeat(4, minmax(0, 1fr));
       }
+
+      .review-summary-strip {
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+      }
+
+      .review-summary-item:nth-child(3) { border-right: 0; }
+      .review-summary-item:nth-child(-n + 3) { border-bottom: 1px solid var(--line); }
+
+      .staff-review-row { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 760px) {
@@ -693,6 +975,33 @@
 
       .big-action { min-height: 118px; }
       .keypad button { min-height: 72px; }
+
+      .review-workspace-header {
+        align-items: start;
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+
+      .review-workspace-heading p { display: none; }
+      .review-workspace-header button { min-width: 76px; }
+
+      .review-workspace-body {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .review-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .review-summary-item,
+      .review-summary-item:nth-child(3) { border-right: 1px solid var(--line); }
+      .review-summary-item:nth-child(2n) { border-right: 0; }
+      .review-summary-item:nth-child(-n + 4) { border-bottom: 1px solid var(--line); }
+      .review-summary-item:nth-child(n + 5) { border-bottom: 0; }
+
+      .staff-review-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 430px) {
+      .staff-review-facts { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1021,6 +1330,19 @@
     </main>
   </div>
 
+  <section class="review-workspace" id="reviewWorkspace" aria-hidden="true" aria-labelledby="reviewWorkspaceTitle">
+    <header class="review-workspace-header">
+      <div class="review-workspace-heading">
+        <h2 id="reviewWorkspaceTitle">Monthly Review</h2>
+        <p id="reviewWorkspaceSubtitle"></p>
+      </div>
+      <button class="outline" id="closeReviewWorkspace" type="button">Close</button>
+    </header>
+    <div class="review-workspace-scroll" id="reviewWorkspaceScroll" tabindex="0" aria-label="Monthly review details">
+      <div class="review-workspace-body" id="reviewWorkspaceBody"></div>
+    </div>
+  </section>
+
   <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <h2 id="modalTitle"></h2>
@@ -1126,6 +1448,7 @@
       clockSaving: false,
       staffMergeRunning: false,
       staffMergeComplete: false,
+      reviewReturnFocus: null,
       activeAdminTab: "dashboard"
     };
 
@@ -2685,51 +3008,139 @@
       };
     }
 
-    function renderReportRows(staffReports = []) {
-      return staffReports.map((row) => `
-        <tr>
-          <td>${esc(row.staffName)}</td>
-          <td>${esc(row.clockIns)}</td>
-          <td>${esc(row.clockOuts)}</td>
-          <td>${esc(row.totalRecords)}</td>
-          <td>${esc(row.manualUpdates)}</td>
-          <td>${esc(row.ptoUsed)} ${esc(ptoUnitLabel(row.ptoUnit, row.ptoUsed))}</td>
-          <td>${esc(row.uncoveredAbsences)}</td>
-          <td>${esc(row.unlabeledAbsences || 0)}</td>
-          <td>${esc(row.firstRecord || "")}</td>
-          <td>${esc(row.lastRecord || "")}</td>
-          <td>${esc((row.flags || []).join(", ") || "Clear")}</td>
-        </tr>
-      `).join("") || `<tr><td colspan="11">No active staff found for this group.</td></tr>`;
+    function reportRowStatus(row) {
+      const flags = row.flags || [];
+      if (Number(row.uncoveredAbsences || 0) > 0 || flags.includes("No records")) {
+        return { key: "attention", label: "Attention" };
+      }
+      if (Number(row.unlabeledAbsences || 0) > 0 || flags.some((flag) => flag === "Clock-in/out mismatch" || flag === "Open shift")) {
+        return { key: "review", label: "Needs review" };
+      }
+      if (Number(row.ptoUsed || 0) > 0 || Number(row.manualUpdates || 0) > 0) {
+        return { key: "documented", label: "Documented" };
+      }
+      return { key: "clear", label: "Clear" };
+    }
+
+    function formatReviewMonth(value) {
+      const [year, month] = String(value || "").split("-").map(Number);
+      if (!year || !month) return value || "Monthly review";
+      return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    }
+
+    function renderStaffReviewRows(staffReports = []) {
+      if (!staffReports.length) return `<div class="staff-review-empty">No active staff found for this division.</div>`;
+      return staffReports.map((row) => {
+        const status = reportRowStatus(row);
+        const notes = (row.flags || []).join("; ") || "No exceptions found in this monthly record.";
+        const ptoUsed = Number(row.ptoUsed || 0);
+        const ptoAllowance = Number(row.ptoAllowance || 0);
+        const ptoUnit = ptoUnitLabel(row.ptoUnit, ptoUsed || ptoAllowance);
+        const firstRecord = row.firstRecord || "No record";
+        const lastRecord = row.lastRecord || "No record";
+        return `
+          <article class="staff-review-row status-${esc(status.key)}">
+            <div class="staff-review-person">
+              <h3>${esc(row.staffName)}</h3>
+              <span class="staff-review-status ${esc(status.key)}"><span class="review-legend-dot"></span>${esc(status.label)}</span>
+              <p class="staff-review-notes">${esc(notes)}</p>
+            </div>
+            <div class="staff-review-facts">
+              <div class="staff-review-fact">
+                <span>Clock records</span>
+                <strong>${esc(row.totalRecords || 0)}</strong>
+                <small>${esc(row.clockIns || 0)} in · ${esc(row.clockOuts || 0)} out</small>
+              </div>
+              <div class="staff-review-fact">
+                <span>PTO applied</span>
+                <strong>${esc(ptoUsed)} ${esc(ptoUnit)}</strong>
+                <small>${esc(row.ptoRemaining || 0)} remaining of ${esc(ptoAllowance)}</small>
+              </div>
+              <div class="staff-review-fact">
+                <span>Absence status</span>
+                <strong>${esc(row.uncoveredAbsences || 0)} uncovered</strong>
+                <small>${esc(row.unlabeledAbsences || 0)} still need a label</small>
+              </div>
+              <div class="staff-review-fact">
+                <span>Manual corrections</span>
+                <strong>${esc(row.manualUpdates || 0)}</strong>
+                <small>Supervisor-amended records</small>
+              </div>
+              <div class="staff-review-fact">
+                <span>First record</span>
+                <strong>${esc(firstRecord)}</strong>
+              </div>
+              <div class="staff-review-fact">
+                <span>Last record</span>
+                <strong>${esc(lastRecord)}</strong>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function closeMonthlyReport() {
+      $("reviewWorkspace").classList.remove("active");
+      $("reviewWorkspace").setAttribute("aria-hidden", "true");
+      document.body.classList.remove("review-open");
+      if (state.reviewReturnFocus?.isConnected) state.reviewReturnFocus.focus();
+      state.reviewReturnFocus = null;
     }
 
     function openMonthlyReport(review) {
       if (!review) return;
+      const rows = review.staffReports || [];
       const reviewedAt = timestampToDate(review.reviewedAt) || timestampToDate(review.localMs);
-      openModal(
-        `${review.groupName || groupName(review.groupId)} report`,
-        `
-          <div class="report-summary">
-            <div><strong>Month</strong><span>${esc(review.monthKey || "")}</span></div>
-            <div><strong>Supervisor</strong><span>${esc(review.supervisorName || "")}</span></div>
-            <div><strong>Staff</strong><span>${esc(review.staffCount || 0)}</span></div>
-            <div><strong>Records</strong><span>${esc(review.recordCount || 0)}</span></div>
-            <div><strong>Manual updates</strong><span>${esc(review.manualUpdateCount || 0)}</span></div>
-            <div><strong>PTO applied</strong><span>${esc(review.ptoUsedCount || 0)}</span></div>
-            <div><strong>Uncovered</strong><span>${esc(review.uncoveredAbsenceCount || 0)}</span></div>
-            <div><strong>Needs label</strong><span>${esc(review.unlabeledAbsenceCount || 0)}</span></div>
-            <div><strong>Exceptions</strong><span>${esc(review.exceptionCount || 0)}</span></div>
+      const statusCounts = rows.reduce((counts, row) => {
+        counts[reportRowStatus(row).key] += 1;
+        return counts;
+      }, { clear: 0, documented: 0, review: 0, attention: 0 });
+      const division = review.groupName || groupName(review.groupId);
+      const isSubmitted = Boolean(review.id);
+      state.reviewReturnFocus = document.activeElement;
+      $("reviewWorkspaceTitle").textContent = `${division} Monthly Review`;
+      $("reviewWorkspaceSubtitle").textContent = `${formatReviewMonth(review.monthKey)} · ${review.supervisorName || "Supervisor"}`;
+      $("reviewWorkspaceBody").innerHTML = `
+        <section class="review-overview">
+          <div class="review-overview-copy">
+            <div>
+              <h3>${esc(formatReviewMonth(review.monthKey))}</h3>
+              <p class="small">${isSubmitted ? `Authorized${reviewedAt ? ` ${esc(reviewedAt.toLocaleString())}` : ""} by ${esc(review.supervisorName || "supervisor")}.` : `Live report preview for ${esc(review.supervisorName || "supervisor")}.`}</p>
+            </div>
+            <span class="pill ${isSubmitted ? "confirmed" : "pending"}">${isSubmitted ? "Submitted" : "Preview"}</span>
           </div>
-          <p class="small">Authorized${reviewedAt ? ` ${esc(reviewedAt.toLocaleString())}` : ""} by ${esc(review.supervisorName || "supervisor")}.</p>
-          <div class="table-wrap">
-            <table class="report-table">
-              <thead><tr><th>Staff</th><th>In</th><th>Out</th><th>Total</th><th>Manual</th><th>PTO Applied</th><th>Uncovered</th><th>Needs Label</th><th>First Record</th><th>Last Record</th><th>Notes</th></tr></thead>
-              <tbody>${renderReportRows(review.staffReports || [])}</tbody>
-            </table>
+          <div class="review-summary-strip" aria-label="Monthly review summary">
+            <div class="review-summary-item"><span>Staff</span><strong>${esc(review.staffCount ?? rows.length)}</strong></div>
+            <div class="review-summary-item"><span>Clock records</span><strong>${esc(review.recordCount || 0)}</strong></div>
+            <div class="review-summary-item clear"><span>Clear</span><strong>${esc(statusCounts.clear)}</strong></div>
+            <div class="review-summary-item documented"><span>Documented</span><strong>${esc(statusCounts.documented)}</strong></div>
+            <div class="review-summary-item review"><span>Needs review</span><strong>${esc(statusCounts.review)}</strong></div>
+            <div class="review-summary-item attention"><span>Attention</span><strong>${esc(statusCounts.attention)}</strong></div>
           </div>
-        `,
-        `<button class="blue" id="modalCancel">Close</button>`
-      );
+          <div class="review-legend" aria-label="Status color key">
+            <span class="review-legend-item clear"><span class="review-legend-dot"></span>Clear</span>
+            <span class="review-legend-item documented"><span class="review-legend-dot"></span>PTO or correction documented</span>
+            <span class="review-legend-item review"><span class="review-legend-dot"></span>Needs supervisor review</span>
+            <span class="review-legend-item attention"><span class="review-legend-dot"></span>Uncovered absence or no records</span>
+          </div>
+        </section>
+        <section class="staff-review-list">
+          <div class="staff-review-list-head">
+            <div>
+              <h3>Staff Records</h3>
+              <p class="small">Each row summarizes one employee for this division and month.</p>
+            </div>
+            <span class="small">${esc(rows.length)} staff</span>
+          </div>
+          ${renderStaffReviewRows(rows)}
+        </section>
+      `;
+      $("reviewWorkspaceScroll").scrollTop = 0;
+      $("reviewWorkspace").classList.add("active");
+      $("reviewWorkspace").setAttribute("aria-hidden", "false");
+      document.body.classList.add("review-open");
+      requestAnimationFrame(() => $("closeReviewWorkspace").focus());
     }
 
     function renderReviews() {
@@ -3175,6 +3586,11 @@
     });
 
     document.addEventListener("keydown", async (event) => {
+      if (event.key === "Escape" && $("reviewWorkspace").classList.contains("active")) {
+        event.preventDefault();
+        closeMonthlyReport();
+        return;
+      }
       const isPinScreenActive = $("workerView").classList.contains("active") && !$("pinPanel").classList.contains("hidden");
       if (!isPinScreenActive) return;
       if (/^\d$/.test(event.key) || event.key === "Backspace" || event.key === "Delete" || event.key === "Escape" || event.key === "Enter") {
@@ -3358,6 +3774,7 @@
     $("modalBackdrop").addEventListener("click", (event) => {
       if (event.target.id === "modalBackdrop") closeModal();
     });
+    $("closeReviewWorkspace").addEventListener("click", closeMonthlyReport);
 
     boot();
   </script>
