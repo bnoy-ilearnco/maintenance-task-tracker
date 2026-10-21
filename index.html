@@ -1633,6 +1633,19 @@
       };
     }
 
+    function supervisedGroupIds(user) {
+      if (!user) return [];
+      const assigned = user.role === "supervisor"
+        ? (Array.isArray(user.groupIds) ? user.groupIds : [])
+        : (Array.isArray(user.supervisorGroupIds) ? user.supervisorGroupIds : []);
+      const validGroupIds = new Set(GROUPS.map((group) => group.id));
+      return [...new Set(assigned.filter((groupId) => validGroupIds.has(groupId)))];
+    }
+
+    function isSupervisorForGroup(user, groupId) {
+      return supervisedGroupIds(user).includes(groupId);
+    }
+
     function visibleGroupIds() {
       if (!state.hrUser) return [];
       if (state.hrUser.role === "director") return GROUPS.map((group) => group.id);
@@ -2027,7 +2040,14 @@
       return role === "director" ? "Director" : "Supervisor";
     }
 
+    function userRoleSummary(user) {
+      if (user.role === "director" && supervisedGroupIds(user).length) return "Director + Supervisor";
+      return roleName(user.role);
+    }
+
     function userGroupSummary(user) {
+      if (user.role === "director" && supervisedGroupIds(user).length === GROUPS.length) return "All groups · Supervises all";
+      if (user.role === "director" && supervisedGroupIds(user).length) return `All groups · Supervises ${supervisedGroupIds(user).map(groupName).join(", ")}`;
       if (user.role === "director") return "All groups";
       return (user.groupIds || []).map(groupName).join(", ") || "No groups";
     }
@@ -2076,15 +2096,19 @@
       const month = $("reviewMonth").value || monthKey();
       const visibleLogs = filteredLogs({ monthKey: month, skipType: true, skipStaff: true, skipGroup: true });
       const clockedIn = people.filter((person) => isClockedInAnyGroup(person)).length;
-      const supervisors = state.users.filter((user) => user.role === "supervisor" && user.active !== false);
+      const supervisors = state.users.filter((user) => supervisedGroupIds(user).length && user.active !== false);
       const expectedReviews = state.hrUser.role === "director"
-        ? supervisors.reduce((count, user) => count + (user.groupIds || []).length, 0)
+        ? supervisors.reduce((count, user) => count + supervisedGroupIds(user).length, 0)
         : groups.length;
       const completedReviews = state.hrUser.role === "director"
         ? state.reviews.filter((review) => review.monthKey === month).length
         : state.reviews.filter((review) => review.monthKey === month && review.supervisorId === state.hrUser.id).length;
 
-      $("adminIdentity").textContent = `${state.hrUser.name} · ${state.hrUser.role === "director" ? "Director of HR" : `Supervisor for ${groups.map(groupName).join(", ")}`}`;
+      const supervisorGroups = supervisedGroupIds(state.hrUser);
+      const identityRole = state.hrUser.role === "director"
+        ? `Director of HR${supervisorGroups.length ? ` · Supervisor for ${supervisorGroups.length === GROUPS.length ? "all divisions" : supervisorGroups.map(groupName).join(", ")}` : ""}`
+        : `Supervisor for ${groups.map(groupName).join(", ")}`;
+      $("adminIdentity").textContent = `${state.hrUser.name} · ${identityRole}`;
       $("metrics").innerHTML = `
         <div class="metric"><span class="small">Visible Active Staff</span><strong>${people.length}</strong></div>
         <div class="metric"><span class="small">Clocked In Now</span><strong>${clockedIn}</strong></div>
@@ -2421,7 +2445,7 @@
           <tr>
             <td>${esc(user.name)}</td>
             <td>${esc(user.username)}</td>
-            <td><span class="pill ${esc(user.role)}">${esc(roleName(user.role))}</span></td>
+            <td><span class="pill ${esc(user.role)}">${esc(userRoleSummary(user))}</span></td>
             <td>${esc(userGroupSummary(user))}</td>
             <td><span class="pill">${user.active === false ? "Inactive" : "Active"}</span></td>
             <td>
@@ -2597,7 +2621,7 @@
     }
 
     function canManageAbsenceLabels(groupId) {
-      return state.hrUser?.role === "supervisor" && (state.hrUser.groupIds || []).includes(groupId);
+      return isSupervisorForGroup(state.hrUser, groupId);
     }
 
     function absenceClassification(entry) {
@@ -3143,17 +3167,36 @@
       requestAnimationFrame(() => $("closeReviewWorkspace").focus());
     }
 
+    function supervisorReviewCards(month, groupIds) {
+      return groupIds.map((groupId) => {
+        const review = reviewFor(month, state.hrUser.id, groupId);
+        const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
+        const report = buildMonthlyReport(month, groupId);
+        return `
+          <div class="review-card">
+            <strong>${esc(groupName(groupId))}</strong>
+            <span>${review ? "Monthly report submitted and authorized." : "Monthly report pending."}</span>
+            <span class="small">${esc(report.staffCount)} staff · ${esc(report.recordCount)} records · ${esc(report.ptoUsedCount)} PTO applied · ${esc(report.uncoveredAbsenceCount)} uncovered · ${esc(report.unlabeledAbsenceCount)} need labels</span>
+            <span class="small">${reviewedAt ? reviewedAt.toLocaleString() : `Month: ${esc(month)}`}</span>
+            <button class="outline" data-preview-report="${esc(groupId)}">Preview Report</button>
+            <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Resubmit Report" : "Submit End-of-Month Report"}</button>
+          </div>
+        `;
+      }).join("");
+    }
+
     function renderReviews() {
       if (!$("reviewMonth").value) $("reviewMonth").value = monthKey();
       const month = $("reviewMonth").value;
       const isDirector = state.hrUser?.role === "director";
       const supervisors = isDirector
-        ? state.users.filter((user) => user.role === "supervisor" && user.active !== false)
+        ? state.users.filter((user) => supervisedGroupIds(user).length && user.active !== false)
         : [state.hrUser];
+      const ownSupervisorGroups = supervisedGroupIds(state.hrUser);
 
       if (isDirector) {
-        const expected = supervisors.reduce((count, user) => count + (user.groupIds || []).length, 0);
-        const submitted = supervisors.flatMap((user) => (user.groupIds || []).map((groupId) => reviewFor(month, user.id, groupId))).filter(Boolean).length;
+        const expected = supervisors.reduce((count, user) => count + supervisedGroupIds(user).length, 0);
+        const submitted = supervisors.flatMap((user) => supervisedGroupIds(user).map((groupId) => reviewFor(month, user.id, groupId))).filter(Boolean).length;
         $("reviewCards").innerHTML = `
           <div class="review-card">
             <strong>Director View</strong>
@@ -3163,26 +3206,20 @@
             <strong>Pending Reports</strong>
             <span class="${expected - submitted ? "" : "small"}">${esc(expected - submitted)} still pending.</span>
           </div>
+          ${ownSupervisorGroups.length ? `
+            <div class="review-card">
+              <strong>My Supervisor Reports</strong>
+              <span class="small">Preview and submit reports for each division assigned to you.</span>
+            </div>
+            ${supervisorReviewCards(month, ownSupervisorGroups)}
+          ` : ""}
         `;
       } else {
-        $("reviewCards").innerHTML = visibleGroupIds().map((groupId) => {
-          const review = reviewFor(month, state.hrUser.id, groupId);
-          const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
-          const report = buildMonthlyReport(month, groupId);
-          return `
-            <div class="review-card">
-              <strong>${esc(groupName(groupId))}</strong>
-              <span>${review ? "Monthly report submitted and authorized." : "Monthly report pending."}</span>
-              <span class="small">${esc(report.staffCount)} staff · ${esc(report.recordCount)} records · ${esc(report.ptoUsedCount)} PTO applied · ${esc(report.uncoveredAbsenceCount)} uncovered · ${esc(report.unlabeledAbsenceCount)} need labels</span>
-              <span class="small">${reviewedAt ? reviewedAt.toLocaleString() : `Month: ${esc(month)}`}</span>
-              <button class="outline" data-preview-report="${esc(groupId)}">Preview Report</button>
-              <button class="${review ? "outline" : "green"}" data-confirm-review="${esc(groupId)}">${review ? "Resubmit Report" : "Submit End-of-Month Report"}</button>
-            </div>
-          `;
-        }).join("") || `<div class="review-card"><span class="muted">No groups assigned to this supervisor.</span></div>`;
+        $("reviewCards").innerHTML = supervisorReviewCards(month, ownSupervisorGroups)
+          || `<div class="review-card"><span class="muted">No groups assigned to this supervisor.</span></div>`;
       }
 
-      const rows = supervisors.flatMap((user) => (user.groupIds || []).map((groupId) => ({ user, groupId })))
+      const rows = supervisors.flatMap((user) => supervisedGroupIds(user).map((groupId) => ({ user, groupId })))
         .map(({ user, groupId }) => {
           const review = reviewFor(month, user.id, groupId);
           const reviewedAt = review ? timestampToDate(review.reviewedAt) || timestampToDate(review.localMs) : null;
@@ -3445,7 +3482,7 @@
     }
 
     async function confirmMonthlyReview(groupId) {
-      if (!state.hrUser || state.hrUser.role !== "supervisor" || !canSeeGroup(groupId)) return;
+      if (!state.hrUser || !isSupervisorForGroup(state.hrUser, groupId) || !canSeeGroup(groupId)) return;
       const month = $("reviewMonth").value || monthKey();
       const reviewId = `${month}_${state.hrUser.id}_${groupId}`;
       const report = buildMonthlyReport(month, groupId);
