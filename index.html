@@ -3323,6 +3323,9 @@
     function listenToCollection(key, collectionName) {
       onSnapshot(collection(state.db, collectionName), (snapshot) => {
         state[key] = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+        if (key === "users" && state.hrUser) {
+          state.hrUser = state.users.find((user) => user.id === state.hrUser.id) || state.hrUser;
+        }
         state.loaded[key] = true;
         renderAll();
       }, (error) => alert(`Firestore error in ${collectionName}: ${error.message}`));
