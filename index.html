@@ -3393,7 +3393,19 @@
         $("workerStatus").className = "status-line warning";
         return;
       }
-      const person = state.staff.find((staff) => staff.active !== false && String(staff.pin) === pin);
+      const pinMatches = state.staff.filter((staff) => staff.active !== false && String(staff.pin) === pin);
+      const matchedPerson = pinMatches.length ? chooseStaffMergeTarget(pinMatches) : null;
+      const samePersonProfiles = matchedPerson
+        ? state.staff.filter((staff) => staff.active !== false && normalizedStaffName(staff.name) === normalizedStaffName(matchedPerson.name))
+        : [];
+      const mergedGroupIds = mergeStaffGroupIds(samePersonProfiles);
+      const person = matchedPerson
+        ? {
+            ...matchedPerson,
+            groupId: mergedGroupIds[0] || primaryStaffGroupId(matchedPerson),
+            groupIds: mergedGroupIds.length ? mergedGroupIds : staffGroupIds(matchedPerson)
+          }
+        : null;
       if (!person) {
         $("workerStatus").textContent = "PIN not found. Please try again or ask HR for help.";
         $("workerStatus").className = "status-line warning";
