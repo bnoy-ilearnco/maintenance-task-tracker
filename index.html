@@ -2552,13 +2552,13 @@
       const blanks = Array.from({ length: firstDay }, () => `<div class="timecard-day empty"></div>`).join("");
       const entries = ledger.entries.map((entry) => {
         const dayNumber = Number(entry.dateKey.slice(-2));
-        const canLabel = canManageAbsenceLabels(groupId) && entry.schoolDay && !entry.hasClockIn;
+        const canManageDay = canManageAbsenceLabels(groupId) && entry.schoolDay;
         return `
           <div class="timecard-day ${esc(entry.status)}">
             <strong>${esc(dayNumber)}</strong>
             <span>${esc(entry.label)}</span>
             ${entry.detail ? `<span>${entry.detail}</span>` : ""}
-            ${canLabel ? `<button class="outline timecard-day-action" data-label-absence="${esc(entry.dateKey)}">${entry.absenceEntry ? "Change label" : "Label absence"}</button>` : ""}
+            ${canManageDay ? `<button class="outline timecard-day-action" data-label-absence="${esc(entry.dateKey)}">${entry.hasClockIn ? "Manage records" : (entry.absenceEntry ? "Change label" : "Label absence")}</button>` : ""}
           </div>
         `;
       }).join("");
@@ -2569,7 +2569,7 @@
         <div><span>Monthly PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
         <div><span>PTO Applied</span><strong>${esc(ledger.used)} ${esc(ptoUnitLabel(ledger.unit, ledger.used))}</strong></div>
         <div><span>Remaining</span><strong>${esc(ledger.remaining)} ${esc(ptoUnitLabel(ledger.unit, ledger.remaining))}</strong></div>
-        <div><span>Uncovered</span><strong>${esc(ledger.uncovered)} school days</strong></div>
+        <div><span>Uncovered</span><strong>${esc(ledger.uncovered)} absence units</strong></div>
         <div><span>Needs Label</span><strong>${esc(ledger.unlabeled)} school days</strong></div>
       `;
       $("timecardGrid").innerHTML = weekdays.map((day) => `<div class="timecard-weekday">${day}</div>`).join("") + blanks + entries;
@@ -2627,7 +2627,7 @@
     function absenceClassification(entry) {
       if (!entry || entry.status === "canceled") return "";
       const explicit = entry.classification || entry.absenceLabel || entry.labelType;
-      if (["uncovered", "pto", "pto_x2"].includes(explicit)) return explicit;
+      if (["uncovered", "uncovered_x2", "pto", "pto_x2"].includes(explicit)) return explicit;
       if (entry.status === "uncovered") return "uncovered";
       if (["scheduled", "active", "applied", "pto"].includes(entry.status) || numberValue(entry.units)) {
         return numberValue(entry.units) > 1 ? "pto_x2" : "pto";
@@ -2637,6 +2637,8 @@
 
     function absenceEntryUnits(entry) {
       const explicit = entry?.classification || entry?.absenceLabel || entry?.labelType;
+      if (explicit === "uncovered_x2") return 2;
+      if (explicit === "uncovered") return 1;
       if (explicit === "pto_x2") return 2;
       if (explicit === "pto") return 1;
       const legacyUnits = numberValue(entry?.units);
@@ -2646,6 +2648,7 @@
 
     function absenceLabelTitle(classification) {
       if (classification === "uncovered") return "Uncovered Absence";
+      if (classification === "uncovered_x2") return "Uncovered Absence x2";
       if (classification === "pto_x2") return "Apply PTOx2";
       if (classification === "pto") return "Apply PTO";
       return "Needs supervisor label";
@@ -2715,8 +2718,8 @@
           return entry;
         }
 
-        if (classification === "uncovered") {
-          uncovered += 1;
+        if (["uncovered", "uncovered_x2"].includes(classification)) {
+          uncovered += absenceEntryUnits(absenceEntry);
           entry.status = "uncovered";
           entry.label = absenceLabelTitle(classification);
           entry.detail = [
@@ -2868,8 +2871,8 @@
         alert("Only a supervisor assigned to this division can label absences.");
         return;
       }
-      if (!isSchoolDay(dateKey, groupId) || logs.some((log) => log.type === "in")) {
-        alert("Absence labels can only be applied to school days without a clock-in record.");
+      if (!isSchoolDay(dateKey, groupId)) {
+        alert("Records and absence labels can only be managed on school days.");
         return;
       }
 
@@ -2877,12 +2880,16 @@
       const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
       const available = ptoRemainingForMonth(person, groupId, month, dateKey);
       const currentLabel = absenceClassification(existing);
-      const ptoButtons = [
+      const hasClockIn = logs.some((log) => log.type === "in");
+      const manualTime = dateKey === todayKey() ? localDateParts().timeKey : "";
+      const absenceButtons = hasClockIn ? "" : [
+        `<button class="red" data-save-absence-label="uncovered">Uncovered Absence</button>`,
+        `<button class="red" data-save-absence-label="uncovered_x2">Uncovered Absence x2</button>`,
         available >= 1 ? `<button class="amber" data-save-absence-label="pto">Apply PTO</button>` : "",
         available >= 2 ? `<button class="amber" data-save-absence-label="pto_x2">Apply PTOx2</button>` : ""
       ].filter(Boolean).join("");
       openModal(
-        "Label Missed School Day",
+        hasClockIn ? "Manage School Day" : "Label Missed School Day",
         `
           <form id="absenceLabelForm" class="form-grid">
             <input type="hidden" id="absenceLabelStaffId" value="${esc(person.id)}">
@@ -2891,12 +2898,14 @@
             <label>Staff Member<input value="${esc(person.name)}" readonly></label>
             <label>Division<input value="${esc(groupName(groupId))}" readonly></label>
             <label>Date<input value="${esc(dateKey)}" readonly></label>
-            <label>Current Label<input value="${esc(currentLabel ? absenceLabelTitle(currentLabel) : "Not labeled")}" readonly></label>
+            <label>Current Label<input id="absenceCurrentLabel" value="${esc(hasClockIn ? "Not applicable - clock-in recorded" : (currentLabel ? absenceLabelTitle(currentLabel) : "Not labeled"))}" readonly></label>
+            <label class="full">Manual Clock Time<input id="absenceManualRecordTime" type="time" step="60" value="${esc(manualTime)}"></label>
+            <p class="small full" id="absenceManualRecordStatus">${logs.length ? `Existing records: ${esc(clockTextForDay(logs))}` : "Choose a time, then add a Clock In or Clock Out record."}</p>
             <label class="full">Note<textarea id="absenceLabelNote" placeholder="Optional note">${esc(existing?.note || "")}</textarea></label>
-            <p class="small full">${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(month)} after excluding this date. PTO choices that exceed the remaining balance are not shown.</p>
+            <p class="small full">${hasClockIn ? "This day has a clock-in record, so absence labels are not available." : `${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(month)} after excluding this date. PTO choices that exceed the remaining balance are not shown.`}</p>
           </form>
         `,
-        `<button class="outline" id="modalCancel">Cancel</button>${existing ? `<button class="outline" id="clearAbsenceLabelBtn">Clear Label</button>` : ""}<button class="red" data-save-absence-label="uncovered">Uncovered Absence</button>${ptoButtons}`
+        `<button class="outline" id="modalCancel">Done</button>${existing ? `<button class="outline" id="clearAbsenceLabelBtn">Clear Label</button>` : ""}<button class="green" data-save-absence-record="in">Clock In</button><button class="red" data-save-absence-record="out">Clock Out</button>${absenceButtons}`
       );
     }
 
@@ -2913,7 +2922,7 @@
       const person = state.staff.find((item) => item.id === $("absenceLabelStaffId")?.value);
       const groupId = $("absenceLabelGroupId")?.value;
       const dateKey = $("absenceLabelDate")?.value;
-      if (!person || !groupId || !dateKey || !["uncovered", "pto", "pto_x2"].includes(classification) || !canManageAbsenceLabels(groupId)) {
+      if (!person || !groupId || !dateKey || !["uncovered", "uncovered_x2", "pto", "pto_x2"].includes(classification) || !canManageAbsenceLabels(groupId)) {
         alert("Only a supervisor assigned to this division can label absences.");
         return;
       }
@@ -2924,9 +2933,10 @@
 
       const month = dateKey.slice(0, 7);
       const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
-      const units = classification === "pto_x2" ? 2 : (classification === "pto" ? 1 : 0);
+      const units = ["uncovered_x2", "pto_x2"].includes(classification) ? 2 : 1;
+      const ptoUnits = classification === "pto_x2" ? 2 : (classification === "pto" ? 1 : 0);
       const available = ptoRemainingForMonth(person, groupId, month, dateKey);
-      if (units > available) {
+      if (ptoUnits > available) {
         const unit = ptoUnitForStaff(person, groupId);
         alert(`Only ${available} ${ptoUnitLabel(unit, available)} remain for ${month}. Choose another label.`);
         return;
@@ -2954,6 +2964,72 @@
       }, { merge: true });
       $("timecardMonth").value = month;
       closeModal();
+    }
+
+    async function saveManualRecordFromAbsenceModal(type) {
+      const person = state.staff.find((item) => item.id === $("absenceLabelStaffId")?.value);
+      const groupId = $("absenceLabelGroupId")?.value;
+      const dateKey = $("absenceLabelDate")?.value;
+      const timeKey = $("absenceManualRecordTime")?.value;
+      if (!person || !groupId || !dateKey || !["in", "out"].includes(type) || !canManageAbsenceLabels(groupId)) {
+        alert("Only a supervisor assigned to this division can add manual records.");
+        return;
+      }
+      if (!isSchoolDay(dateKey, groupId)) {
+        alert("Manual records can only be added here for school days.");
+        return;
+      }
+      if (!/^\d{2}:\d{2}$/.test(timeKey || "")) {
+        alert(`Choose the ${type === "in" ? "clock-in" : "clock-out"} time first.`);
+        $("absenceManualRecordTime")?.focus();
+        return;
+      }
+
+      const localMs = msFromDateTime(dateKey, timeKey);
+      const duplicate = logsForStaffGroupDate(person.id, groupId, dateKey)
+        .some((log) => log.type === type && Number(log.localMs) === localMs);
+      if (duplicate) {
+        alert(`That ${type === "in" ? "clock-in" : "clock-out"} record already exists.`);
+        return;
+      }
+
+      const actionButtons = [...document.querySelectorAll("[data-save-absence-record]")];
+      actionButtons.forEach((button) => { button.disabled = true; });
+      try {
+        const parts = localDateParts(localMs);
+        const note = $("absenceLabelNote")?.value.trim() || "";
+        await addDoc(collection(state.db, "clockLogs"), {
+          staffId: person.id,
+          staffName: person.name,
+          groupId,
+          type,
+          dateKey: parts.dateKey,
+          monthKey: parts.monthKey,
+          localMs,
+          amendmentNote: note ? `Monthly time card: ${note}` : "Added from monthly time card",
+          amended: true,
+          amendedAt: serverTimestamp(),
+          amendedBy: state.hrUser.id,
+          amendedByName: state.hrUser.name,
+          source: "manual",
+          createdAt: serverTimestamp(),
+          createdBy: state.hrUser.id,
+          createdByName: state.hrUser.name
+        });
+        const status = $("absenceManualRecordStatus");
+        if (status) {
+          status.textContent = `${type === "in" ? "Clock In" : "Clock Out"} at ${formatDateTime(localMs).time} was added. Change the time to add another record, or select Done.`;
+        }
+        if (type === "in") {
+          if ($("absenceCurrentLabel")) $("absenceCurrentLabel").value = "Not applicable - clock-in recorded";
+          document.querySelectorAll("[data-save-absence-label]").forEach((button) => { button.hidden = true; });
+        }
+      } catch (error) {
+        console.error(error);
+        alert("The manual record could not be saved. Please try again.");
+      } finally {
+        actionButtons.forEach((button) => { button.disabled = false; });
+      }
     }
 
     async function clearAbsenceLabel() {
@@ -2991,7 +3067,7 @@
       if (!logs.length) flags.push("No records");
       if (clockIns !== clockOuts) flags.push("Clock-in/out mismatch");
       if (logs[logs.length - 1]?.type === "in") flags.push("Open shift");
-      if (pto.uncovered) flags.push(`${pto.uncovered} uncovered school-day absence${pto.uncovered === 1 ? "" : "s"}`);
+      if (pto.uncovered) flags.push(`${pto.uncovered} uncovered absence unit${pto.uncovered === 1 ? "" : "s"}`);
       if (pto.unlabeled) flags.push(`${pto.unlabeled} missed school day${pto.unlabeled === 1 ? "" : "s"} still need${pto.unlabeled === 1 ? "s" : ""} a label`);
       return {
         staffId: person.id,
@@ -3082,7 +3158,7 @@
               </div>
               <div class="staff-review-fact">
                 <span>Absence status</span>
-                <strong>${esc(row.uncoveredAbsences || 0)} uncovered</strong>
+                <strong>${esc(row.uncoveredAbsences || 0)} uncovered units</strong>
                 <small>${esc(row.unlabeledAbsences || 0)} still need a label</small>
               </div>
               <div class="staff-review-fact">
@@ -3606,6 +3682,7 @@
       if (target.id === "scheduleTimeOffBtn") openScheduleTimeOffModal();
       if (target.id === "saveScheduledTimeOffBtn") await saveScheduledTimeOffFromModal();
       if (target.dataset.labelAbsence) openAbsenceLabelModal(target.dataset.labelAbsence);
+      if (target.dataset.saveAbsenceRecord) await saveManualRecordFromAbsenceModal(target.dataset.saveAbsenceRecord);
       if (target.dataset.saveAbsenceLabel) await saveAbsenceLabel(target.dataset.saveAbsenceLabel);
       if (target.id === "clearAbsenceLabelBtn" && confirm("Clear this absence label?")) await clearAbsenceLabel();
       if (target.dataset.previewReport) {
