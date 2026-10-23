@@ -918,6 +918,31 @@
       gap: 8px;
     }
 
+    .day-action-section {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .day-action-section h3 {
+      margin: 0;
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+
+    .day-action-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .day-action-buttons button {
+      min-height: 46px;
+      white-space: normal;
+    }
+
     .muted { color: var(--muted); }
     .hidden { display: none !important; }
     .director-only.hidden-by-role { display: none !important; }
@@ -961,6 +986,10 @@
 
       .timecard-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .day-action-buttons {
+        grid-template-columns: 1fr;
       }
 
       .timecard-weekday,
@@ -2881,12 +2910,11 @@
       const available = ptoRemainingForMonth(person, groupId, month, dateKey);
       const currentLabel = absenceClassification(existing);
       const hasClockIn = logs.some((log) => log.type === "in");
-      const manualTime = dateKey === todayKey() ? localDateParts().timeKey : "";
       const absenceButtons = hasClockIn ? "" : [
-        `<button class="red" data-save-absence-label="uncovered">Uncovered Absence</button>`,
-        `<button class="red" data-save-absence-label="uncovered_x2">Uncovered Absence x2</button>`,
-        available >= 1 ? `<button class="amber" data-save-absence-label="pto">Apply PTO</button>` : "",
-        available >= 2 ? `<button class="amber" data-save-absence-label="pto_x2">Apply PTOx2</button>` : ""
+        `<button class="red" type="button" data-save-absence-label="uncovered">Uncovered Absence</button>`,
+        `<button class="red" type="button" data-save-absence-label="uncovered_x2">Uncovered Absence x2</button>`,
+        available >= 1 ? `<button class="amber" type="button" data-save-absence-label="pto">Apply PTO</button>` : "",
+        available >= 2 ? `<button class="amber" type="button" data-save-absence-label="pto_x2">Apply PTOx2</button>` : ""
       ].filter(Boolean).join("");
       openModal(
         hasClockIn ? "Manage School Day" : "Label Missed School Day",
@@ -2899,13 +2927,25 @@
             <label>Division<input value="${esc(groupName(groupId))}" readonly></label>
             <label>Date<input value="${esc(dateKey)}" readonly></label>
             <label>Current Label<input id="absenceCurrentLabel" value="${esc(hasClockIn ? "Not applicable - clock-in recorded" : (currentLabel ? absenceLabelTitle(currentLabel) : "Not labeled"))}" readonly></label>
-            <label class="full">Manual Clock Time<input id="absenceManualRecordTime" type="time" step="60" value="${esc(manualTime)}"></label>
-            <p class="small full" id="absenceManualRecordStatus">${logs.length ? `Existing records: ${esc(clockTextForDay(logs))}` : "Choose a time, then add a Clock In or Clock Out record."}</p>
             <label class="full">Note<textarea id="absenceLabelNote" placeholder="Optional note">${esc(existing?.note || "")}</textarea></label>
             <p class="small full">${hasClockIn ? "This day has a clock-in record, so absence labels are not available." : `${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(month)} after excluding this date. PTO choices that exceed the remaining balance are not shown.`}</p>
+            <section class="day-action-section">
+              <h3>Add a missing time record</h3>
+              <p class="small">${logs.length ? `Existing records: ${esc(clockTextForDay(logs))}` : "Choose the record type. You will enter its time on the next screen."}</p>
+              <div class="day-action-buttons">
+                <button class="green" type="button" data-open-absence-record="in">Clock In</button>
+                <button class="red" type="button" data-open-absence-record="out">Clock Out</button>
+              </div>
+            </section>
+            ${hasClockIn ? "" : `
+              <section class="day-action-section">
+                <h3>Apply an absence label</h3>
+                <div class="day-action-buttons">${absenceButtons}</div>
+              </section>
+            `}
           </form>
         `,
-        `<button class="outline" id="modalCancel">Done</button>${existing ? `<button class="outline" id="clearAbsenceLabelBtn">Clear Label</button>` : ""}<button class="green" data-save-absence-record="in">Clock In</button><button class="red" data-save-absence-record="out">Clock Out</button>${absenceButtons}`
+        `<button class="outline" id="modalCancel">Done</button>${existing ? `<button class="outline" id="clearAbsenceLabelBtn">Clear Label</button>` : ""}`
       );
     }
 
@@ -2966,11 +3006,53 @@
       closeModal();
     }
 
-    async function saveManualRecordFromAbsenceModal(type) {
+    function openAbsenceRecordTimeModal(type) {
       const person = state.staff.find((item) => item.id === $("absenceLabelStaffId")?.value);
       const groupId = $("absenceLabelGroupId")?.value;
       const dateKey = $("absenceLabelDate")?.value;
-      const timeKey = $("absenceManualRecordTime")?.value;
+      const note = $("absenceLabelNote")?.value.trim() || "";
+      if (!person || !groupId || !dateKey || !["in", "out"].includes(type) || !canManageAbsenceLabels(groupId)) {
+        alert("Only a supervisor assigned to this division can add manual records.");
+        return;
+      }
+
+      const actionLabel = type === "in" ? "Clock In" : "Clock Out";
+      const logs = logsForStaffGroupDate(person.id, groupId, dateKey);
+      const defaultTime = dateKey === todayKey() ? localDateParts().timeKey : "";
+      openModal(
+        `Add ${actionLabel}`,
+        `
+          <form id="absenceRecordForm" class="form-grid">
+            <input type="hidden" id="absenceRecordStaffId" value="${esc(person.id)}">
+            <input type="hidden" id="absenceRecordGroupId" value="${esc(groupId)}">
+            <input type="hidden" id="absenceRecordDate" value="${esc(dateKey)}">
+            <input type="hidden" id="absenceRecordType" value="${esc(type)}">
+            <label>Staff Member<input value="${esc(person.name)}" readonly></label>
+            <label>Division<input value="${esc(groupName(groupId))}" readonly></label>
+            <label>Date<input value="${esc(dateKey)}" readonly></label>
+            <label>${esc(actionLabel)} Time<input id="absenceRecordTime" type="time" step="60" value="${esc(defaultTime)}" required></label>
+            <label class="full">Correction Note<textarea id="absenceRecordNote" placeholder="Optional note">${esc(note)}</textarea></label>
+            <p class="small full">${logs.length ? `Existing records: ${esc(clockTextForDay(logs))}` : `Enter the ${type === "in" ? "clock-in" : "clock-out"} time, then save the record.`}</p>
+          </form>
+        `,
+        `<button class="outline" id="backToAbsenceLabelBtn">Back</button><button class="${type === "in" ? "green" : "red"}" data-save-absence-record="${esc(type)}">Save ${esc(actionLabel)}</button>`
+      );
+      requestAnimationFrame(() => $("absenceRecordTime")?.focus());
+    }
+
+    function returnToAbsenceLabelModal() {
+      const dateKey = $("absenceRecordDate")?.value;
+      const note = $("absenceRecordNote")?.value || "";
+      if (!dateKey) return;
+      openAbsenceLabelModal(dateKey);
+      if ($("absenceLabelNote")) $("absenceLabelNote").value = note;
+    }
+
+    async function saveManualRecordFromAbsenceModal(type) {
+      const person = state.staff.find((item) => item.id === $("absenceRecordStaffId")?.value);
+      const groupId = $("absenceRecordGroupId")?.value;
+      const dateKey = $("absenceRecordDate")?.value;
+      const timeKey = $("absenceRecordTime")?.value;
       if (!person || !groupId || !dateKey || !["in", "out"].includes(type) || !canManageAbsenceLabels(groupId)) {
         alert("Only a supervisor assigned to this division can add manual records.");
         return;
@@ -2981,7 +3063,7 @@
       }
       if (!/^\d{2}:\d{2}$/.test(timeKey || "")) {
         alert(`Choose the ${type === "in" ? "clock-in" : "clock-out"} time first.`);
-        $("absenceManualRecordTime")?.focus();
+        $("absenceRecordTime")?.focus();
         return;
       }
 
@@ -2993,11 +3075,11 @@
         return;
       }
 
-      const actionButtons = [...document.querySelectorAll("[data-save-absence-record]")];
-      actionButtons.forEach((button) => { button.disabled = true; });
+      const saveButton = document.querySelector("[data-save-absence-record]");
+      if (saveButton) saveButton.disabled = true;
       try {
         const parts = localDateParts(localMs);
-        const note = $("absenceLabelNote")?.value.trim() || "";
+        const note = $("absenceRecordNote")?.value.trim() || "";
         await addDoc(collection(state.db, "clockLogs"), {
           staffId: person.id,
           staffName: person.name,
@@ -3016,19 +3098,12 @@
           createdBy: state.hrUser.id,
           createdByName: state.hrUser.name
         });
-        const status = $("absenceManualRecordStatus");
-        if (status) {
-          status.textContent = `${type === "in" ? "Clock In" : "Clock Out"} at ${formatDateTime(localMs).time} was added. Change the time to add another record, or select Done.`;
-        }
-        if (type === "in") {
-          if ($("absenceCurrentLabel")) $("absenceCurrentLabel").value = "Not applicable - clock-in recorded";
-          document.querySelectorAll("[data-save-absence-label]").forEach((button) => { button.hidden = true; });
-        }
+        closeModal();
       } catch (error) {
         console.error(error);
         alert("The manual record could not be saved. Please try again.");
       } finally {
-        actionButtons.forEach((button) => { button.disabled = false; });
+        if (saveButton) saveButton.disabled = false;
       }
     }
 
@@ -3682,6 +3757,8 @@
       if (target.id === "scheduleTimeOffBtn") openScheduleTimeOffModal();
       if (target.id === "saveScheduledTimeOffBtn") await saveScheduledTimeOffFromModal();
       if (target.dataset.labelAbsence) openAbsenceLabelModal(target.dataset.labelAbsence);
+      if (target.dataset.openAbsenceRecord) openAbsenceRecordTimeModal(target.dataset.openAbsenceRecord);
+      if (target.id === "backToAbsenceLabelBtn") returnToAbsenceLabelModal();
       if (target.dataset.saveAbsenceRecord) await saveManualRecordFromAbsenceModal(target.dataset.saveAbsenceRecord);
       if (target.dataset.saveAbsenceLabel) await saveAbsenceLabel(target.dataset.saveAbsenceLabel);
       if (target.id === "clearAbsenceLabelBtn" && confirm("Clear this absence label?")) await clearAbsenceLabel();
