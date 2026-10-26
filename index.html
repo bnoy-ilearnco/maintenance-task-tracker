@@ -1198,7 +1198,7 @@
                     <option value="false">Inactive</option>
                   </select>
                 </label>
-                <label>PTO Allowance<input id="staffPtoAllowance" type="number" min="0" step="0.25" placeholder="0"></label>
+                <label>Annual PTO Allowance<input id="staffPtoAllowance" type="number" min="0" step="0.25" placeholder="0"></label>
                 <label>PTO Unit
                   <select id="staffPtoUnit">
                     <option value="auto">Auto by group</option>
@@ -1555,7 +1555,7 @@
     function ptoSummary(person, groupId = "") {
       const allowance = ptoAllowanceForStaff(person, groupId);
       const unit = ptoUnitForStaff(person, groupId);
-      return allowance ? `${allowance} ${ptoUnitLabel(unit, allowance)}` : "Not set";
+      return allowance ? `${allowance} ${ptoUnitLabel(unit, allowance)} annually` : "Not set";
     }
 
     function dateKeyFromDate(date) {
@@ -2010,7 +2010,7 @@
               <option value="false" ${person.active === false ? "selected" : ""}>Inactive</option>
             </select>
           </label>
-          <label>PTO Allowance<input id="staffEditPtoAllowance" type="number" min="0" step="0.25" value="${esc(ptoAllowanceForStaff(person) || "")}"></label>
+          <label>Annual PTO Allowance<input id="staffEditPtoAllowance" type="number" min="0" step="0.25" value="${esc(ptoAllowanceForStaff(person) || "")}"></label>
           <label>PTO Unit
             <select id="staffEditPtoUnit">
               <option value="auto" ${!person.ptoUnit || person.ptoUnit === "auto" ? "selected" : ""}>Auto by group</option>
@@ -2252,7 +2252,7 @@
         alert("There are no staff rows to export.");
         return;
       }
-      const headers = ["Name", "Groups", "PIN", "PTO Allowance", "Status"];
+      const headers = ["Name", "Groups", "PIN", "Annual PTO Allowance", "Status"];
       const csv = [
         headers.map(csvCell).join(","),
         ...rows.map((row) => [row.name, row.groups, row.pin, row.pto, row.status].map(csvCell).join(","))
@@ -2595,9 +2595,10 @@
       $("timecardSummary").innerHTML = `
         <div><span>Staff Member</span><strong>${esc(person.name)}</strong></div>
         <div><span>Division</span><strong>${esc(groupName(groupId))}</strong></div>
-        <div><span>Monthly PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
-        <div><span>PTO Applied</span><strong>${esc(ledger.used)} ${esc(ptoUnitLabel(ledger.unit, ledger.used))}</strong></div>
-        <div><span>Remaining</span><strong>${esc(ledger.remaining)} ${esc(ptoUnitLabel(ledger.unit, ledger.remaining))}</strong></div>
+        <div><span>Annual PTO Allowance</span><strong>${esc(ledger.allowance)} ${esc(ptoUnitLabel(ledger.unit, ledger.allowance))}</strong></div>
+        <div><span>PTO Used This Month</span><strong>${esc(ledger.used)} ${esc(ptoUnitLabel(ledger.unit, ledger.used))}</strong></div>
+        <div><span>Used This School Year</span><strong>${esc(ledger.annualUsed)} ${esc(ptoUnitLabel(ledger.unit, ledger.annualUsed))}</strong></div>
+        <div><span>Annual Balance (${esc(ledger.schoolYear.label)})</span><strong>${esc(ledger.remaining)} ${esc(ptoUnitLabel(ledger.unit, ledger.remaining))}</strong></div>
         <div><span>Uncovered</span><strong>${esc(ledger.uncovered)} absence units</strong></div>
         <div><span>Needs Label</span><strong>${esc(ledger.unlabeled)} school days</strong></div>
       `;
@@ -2649,6 +2650,30 @@
         .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
     }
 
+    function schoolYearForDateKey(dateKey) {
+      const [year, month] = String(dateKey || "").split("-").map(Number);
+      const safeYear = year || new Date().getFullYear();
+      const startYear = (month || 1) >= 9 ? safeYear : safeYear - 1;
+      const endYear = startYear + 1;
+      return {
+        startYear,
+        endYear,
+        startKey: `${startYear}-09-01`,
+        endKey: `${endYear}-08-31`,
+        label: `${startYear}-${String(endYear).slice(-2)}`
+      };
+    }
+
+    function ptoEntriesForStaffGroupSchoolYear(staffId, groupId, dateKey) {
+      const schoolYear = schoolYearForDateKey(dateKey);
+      return state.ptoEntries
+        .filter((entry) => entry.status !== "canceled")
+        .filter((entry) => entry.staffId === staffId)
+        .filter((entry) => entry.groupId === groupId)
+        .filter((entry) => entry.dateKey >= schoolYear.startKey && entry.dateKey <= schoolYear.endKey)
+        .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)));
+    }
+
     function canManageAbsenceLabels(groupId) {
       return isSupervisorForGroup(state.hrUser, groupId);
     }
@@ -2683,16 +2708,22 @@
       return "Needs supervisor label";
     }
 
-    function ptoRemainingForMonth(person, groupId, month, excludeDateKey = "") {
+    function ptoBalanceForDate(person, groupId, dateKey, excludeDateKey = "") {
       const allowance = ptoAllowanceForStaff(person, groupId);
-      const applied = ptoEntriesForStaffGroupMonth(person.id, groupId, month).reduce((total, entry) => {
+      const schoolYear = schoolYearForDateKey(dateKey);
+      const applied = ptoEntriesForStaffGroupSchoolYear(person.id, groupId, dateKey).reduce((total, entry) => {
         if (entry.dateKey === excludeDateKey || !isSchoolDay(entry.dateKey, groupId)) return total;
         const hasClockIn = logsForStaffGroupDate(person.id, groupId, entry.dateKey).some((log) => log.type === "in");
         const classification = absenceClassification(entry);
         if (hasClockIn || !["pto", "pto_x2"].includes(classification)) return total;
         return total + absenceEntryUnits(entry);
       }, 0);
-      return Math.max(allowance - applied, 0);
+      return {
+        allowance,
+        applied,
+        remaining: Math.max(allowance - applied, 0),
+        schoolYear
+      };
     }
 
     function clockTextForDay(logs) {
@@ -2708,10 +2739,26 @@
       const today = todayKey();
       const allowance = ptoAllowanceForStaff(person, groupId);
       const unit = ptoUnitForStaff(person, groupId);
+      const schoolYear = schoolYearForDateKey(`${month}-01`);
       const start = `${month}-01`;
       const monthDays = monthDateKeys(month);
       const end = monthDays[monthDays.length - 1] || today;
       const absenceByDate = new Map(ptoEntriesForStaffGroupMonth(person.id, groupId, month).map((entry) => [entry.dateKey, entry]));
+      const acceptedPtoDates = new Set();
+      const overagePtoDates = new Set();
+      let annualUsed = 0;
+      ptoEntriesForStaffGroupSchoolYear(person.id, groupId, `${month}-01`).forEach((entry) => {
+        const classification = absenceClassification(entry);
+        const hasClockIn = logsForStaffGroupDate(person.id, groupId, entry.dateKey).some((log) => log.type === "in");
+        if (hasClockIn || !isSchoolDay(entry.dateKey, groupId) || !["pto", "pto_x2"].includes(classification)) return;
+        const units = absenceEntryUnits(entry);
+        if (annualUsed + units <= allowance) {
+          annualUsed += units;
+          acceptedPtoDates.add(entry.dateKey);
+        } else {
+          overagePtoDates.add(entry.dateKey);
+        }
+      });
       let used = 0;
       let uncovered = 0;
       let unlabeled = 0;
@@ -2760,7 +2807,7 @@
 
         if (["pto", "pto_x2"].includes(classification)) {
           const units = absenceEntryUnits(absenceEntry);
-          if (used + units <= allowance) {
+          if (acceptedPtoDates.has(dateKey)) {
             used += units;
             entry.status = "pto";
             entry.label = `${absenceLabelTitle(classification)} (${units} ${ptoUnitLabel(unit, units)})`;
@@ -2774,7 +2821,7 @@
 
           unlabeled += 1;
           entry.status = "needs-label";
-          entry.label = "PTO label exceeds monthly allowance";
+          entry.label = overagePtoDates.has(dateKey) ? "PTO label exceeds annual allowance" : "PTO label needs review";
           entry.detail = "Choose Uncovered Absence or adjust another PTO label.";
           return entry;
         }
@@ -2797,7 +2844,9 @@
         allowance,
         unit,
         used,
-        remaining: Math.max(allowance - used, 0),
+        annualUsed,
+        remaining: Math.max(allowance - annualUsed, 0),
+        schoolYear,
         uncovered,
         unlabeled,
         entries: allEntries.filter((entry) => entry.dateKey.startsWith(month))
@@ -2830,8 +2879,10 @@
       const existing = person && groupId && month
         ? ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey)
         : null;
-      const available = person && groupId && month ? ptoRemainingForMonth(person, groupId, month, dateKey) : 0;
-      return { person, groupId, month, existing, available };
+      const balance = person && groupId && dateKey
+        ? ptoBalanceForDate(person, groupId, dateKey, dateKey)
+        : { remaining: 0, schoolYear: schoolYearForDateKey(dateKey) };
+      return { person, groupId, month, existing, available: balance.remaining, schoolYear: balance.schoolYear };
     }
 
     function updateScheduledTimeOffOptions() {
@@ -2839,7 +2890,7 @@
       const select = $("scheduledTimeOffLabel");
       const balance = $("scheduledTimeOffBalance");
       if (!dateKey || !select || !balance) return;
-      const { person, groupId, month, existing, available } = scheduledTimeOffContext(dateKey);
+      const { person, groupId, existing, available, schoolYear } = scheduledTimeOffContext(dateKey);
       const selected = absenceClassification(existing) || select.value || "uncovered";
       select.innerHTML = scheduledTimeOffOptions(available, selected);
       if ($("absenceLabelNote")) $("absenceLabelNote").value = existing?.note || "";
@@ -2848,7 +2899,7 @@
         return;
       }
       const unit = ptoUnitForStaff(person, groupId);
-      balance.textContent = `${available} ${ptoUnitLabel(unit, available)} remain for ${month}. PTO choices that exceed the balance are not shown.`;
+      balance.textContent = `${available} ${ptoUnitLabel(unit, available)} remain for the ${schoolYear.label} school year. PTO choices that exceed the annual balance are not shown.`;
     }
 
     function openScheduleTimeOffModal() {
@@ -2861,7 +2912,7 @@
       }
 
       const dateKey = defaultScheduledTimeOffDate(month, groupId);
-      const { existing, available } = scheduledTimeOffContextFor(person, groupId, dateKey);
+      const { existing, available, schoolYear } = scheduledTimeOffContextFor(person, groupId, dateKey);
       const selected = absenceClassification(existing) || "uncovered";
       const unit = ptoUnitForStaff(person, groupId);
       openModal(
@@ -2875,7 +2926,7 @@
             <label>Date<input id="absenceLabelDate" type="date" min="${esc(todayKey())}" value="${esc(dateKey)}" required></label>
             <label>Time-Off Label<select id="scheduledTimeOffLabel" required>${scheduledTimeOffOptions(available, selected)}</select></label>
             <label class="full">Note<textarea id="absenceLabelNote" placeholder="Optional note">${esc(existing?.note || "")}</textarea></label>
-            <p class="small full" id="scheduledTimeOffBalance">${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(dateKey.slice(0, 7))}. PTO choices that exceed the balance are not shown.</p>
+            <p class="small full" id="scheduledTimeOffBalance">${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for the ${esc(schoolYear.label)} school year. PTO choices that exceed the annual balance are not shown.</p>
           </form>
         `,
         `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="saveScheduledTimeOffBtn">Schedule Time Off</button>`
@@ -2885,9 +2936,11 @@
     function scheduledTimeOffContextFor(person, groupId, dateKey) {
       const month = dateKey.slice(0, 7);
       const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
+      const balance = ptoBalanceForDate(person, groupId, dateKey, dateKey);
       return {
         existing,
-        available: ptoRemainingForMonth(person, groupId, month, dateKey)
+        available: balance.remaining,
+        schoolYear: balance.schoolYear
       };
     }
 
@@ -2907,7 +2960,8 @@
 
       const unit = ptoUnitForStaff(person, groupId);
       const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
-      const available = ptoRemainingForMonth(person, groupId, month, dateKey);
+      const balance = ptoBalanceForDate(person, groupId, dateKey, dateKey);
+      const available = balance.remaining;
       const currentLabel = absenceClassification(existing);
       const hasClockIn = logs.some((log) => log.type === "in");
       const absenceButtons = hasClockIn ? "" : [
@@ -2928,7 +2982,7 @@
             <label>Date<input value="${esc(dateKey)}" readonly></label>
             <label>Current Label<input id="absenceCurrentLabel" value="${esc(hasClockIn ? "Not applicable - clock-in recorded" : (currentLabel ? absenceLabelTitle(currentLabel) : "Not labeled"))}" readonly></label>
             <label class="full">Note<textarea id="absenceLabelNote" placeholder="Optional note">${esc(existing?.note || "")}</textarea></label>
-            <p class="small full">${hasClockIn ? "This day has a clock-in record, so absence labels are not available." : `${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for ${esc(month)} after excluding this date. PTO choices that exceed the remaining balance are not shown.`}</p>
+            <p class="small full">${hasClockIn ? "This day has a clock-in record, so absence labels are not available." : `${esc(available)} ${esc(ptoUnitLabel(unit, available))} remain for the ${esc(balance.schoolYear.label)} school year after excluding this date. PTO choices that exceed the annual balance are not shown.`}</p>
             <section class="day-action-section">
               <h3>Add a missing time record</h3>
               <p class="small">${logs.length ? `Existing records: ${esc(clockTextForDay(logs))}` : "Choose the record type. You will enter its time on the next screen."}</p>
@@ -2975,10 +3029,11 @@
       const existing = ptoEntriesForStaffGroupMonth(person.id, groupId, month).find((entry) => entry.dateKey === dateKey);
       const units = ["uncovered_x2", "pto_x2"].includes(classification) ? 2 : 1;
       const ptoUnits = classification === "pto_x2" ? 2 : (classification === "pto" ? 1 : 0);
-      const available = ptoRemainingForMonth(person, groupId, month, dateKey);
+      const balance = ptoBalanceForDate(person, groupId, dateKey, dateKey);
+      const available = balance.remaining;
       if (ptoUnits > available) {
         const unit = ptoUnitForStaff(person, groupId);
-        alert(`Only ${available} ${ptoUnitLabel(unit, available)} remain for ${month}. Choose another label.`);
+        alert(`Only ${available} ${ptoUnitLabel(unit, available)} remain for the ${balance.schoolYear.label} school year. Choose another label.`);
         return;
       }
 
@@ -3155,7 +3210,9 @@
         ptoAllowance: pto.allowance,
         ptoUnit: pto.unit,
         ptoUsed: pto.used,
+        ptoAnnualUsed: pto.annualUsed,
         ptoRemaining: pto.remaining,
+        ptoSchoolYear: pto.schoolYear.label,
         uncoveredAbsences: pto.uncovered,
         unlabeledAbsences: pto.unlabeled,
         firstRecord: first ? `${first.date} ${first.time}` : "",
@@ -3203,14 +3260,21 @@
       return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
     }
 
-    function renderStaffReviewRows(staffReports = []) {
+    function renderStaffReviewRows(staffReports = [], reviewMonth = "", reviewGroupId = "") {
       if (!staffReports.length) return `<div class="staff-review-empty">No active staff found for this division.</div>`;
       return staffReports.map((row) => {
         const status = reportRowStatus(row);
         const notes = (row.flags || []).join("; ") || "No exceptions found in this monthly record.";
+        const person = state.staff.find((item) => item.id === row.staffId);
+        const legacyLedger = row.ptoAnnualUsed == null && person && reviewMonth
+          ? buildPtoLedger(person, reviewMonth, row.groupId || reviewGroupId)
+          : null;
         const ptoUsed = Number(row.ptoUsed || 0);
-        const ptoAllowance = Number(row.ptoAllowance || 0);
-        const ptoUnit = ptoUnitLabel(row.ptoUnit, ptoUsed || ptoAllowance);
+        const ptoAnnualUsed = Number(row.ptoAnnualUsed ?? legacyLedger?.annualUsed ?? row.ptoUsed ?? 0);
+        const ptoAllowance = Number(legacyLedger?.allowance ?? row.ptoAllowance ?? 0);
+        const ptoRemaining = Number(legacyLedger?.remaining ?? row.ptoRemaining ?? 0);
+        const ptoSchoolYear = row.ptoSchoolYear || legacyLedger?.schoolYear.label || "";
+        const ptoUnit = ptoUnitLabel(legacyLedger?.unit || row.ptoUnit, ptoUsed || ptoAllowance);
         const firstRecord = row.firstRecord || "No record";
         const lastRecord = row.lastRecord || "No record";
         return `
@@ -3227,9 +3291,9 @@
                 <small>${esc(row.clockIns || 0)} in · ${esc(row.clockOuts || 0)} out</small>
               </div>
               <div class="staff-review-fact">
-                <span>PTO applied</span>
+                <span>PTO applied this month</span>
                 <strong>${esc(ptoUsed)} ${esc(ptoUnit)}</strong>
-                <small>${esc(row.ptoRemaining || 0)} remaining of ${esc(ptoAllowance)}</small>
+                <small>${esc(ptoAnnualUsed)} used · ${esc(ptoRemaining)} remaining of ${esc(ptoAllowance)} annually${ptoSchoolYear ? ` (${esc(ptoSchoolYear)})` : ""}</small>
               </div>
               <div class="staff-review-fact">
                 <span>Absence status</span>
@@ -3308,7 +3372,7 @@
             </div>
             <span class="small">${esc(rows.length)} staff</span>
           </div>
-          ${renderStaffReviewRows(rows)}
+          ${renderStaffReviewRows(rows, review.monthKey, review.groupId)}
         </section>
       `;
       $("reviewWorkspaceScroll").scrollTop = 0;
