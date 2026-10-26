@@ -3849,8 +3849,7 @@
     });
 
     document.querySelectorAll("[data-pin-key]").forEach((button) => {
-      button.addEventListener("pointerdown", async (event) => {
-        event.preventDefault();
+      button.addEventListener("click", async () => {
         await handlePinKey(button.dataset.pinKey);
       });
     });
