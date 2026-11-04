@@ -1176,7 +1176,7 @@
               <div class="section-head">
                 <div>
                   <h2>Staff & PINs</h2>
-                  <p class="small">View visible staff and export PIN cards. Supervisor PDF exports are limited to their assigned division staff.</p>
+                  <p class="small">View visible staff, add PTO allowances for assigned divisions, and export PIN cards. Supervisor PDF exports are limited to their assigned division staff.</p>
                 </div>
                 <div class="row-actions">
                   <button class="outline" id="exportStaffCsvBtn">Export CSV</button>
@@ -1685,6 +1685,11 @@
       return visibleGroupIds().includes(groupId);
     }
 
+    function canAddPtoForGroup(groupId) {
+      if (!state.hrUser || !canSeeGroup(groupId)) return false;
+      return state.hrUser.role === "director" || isSupervisorForGroup(state.hrUser, groupId);
+    }
+
     function staffGroupIds(person) {
       const groupIds = Array.isArray(person?.groupIds) && person.groupIds.length
         ? person.groupIds
@@ -2051,6 +2056,111 @@
       closeModal();
     }
 
+    function updateAddPtoPreview() {
+      const person = state.staff.find((item) => item.id === $("addPtoStaffId")?.value);
+      const groupId = $("addPtoGroup")?.value;
+      if (!person || !groupId) return;
+      const currentAllowance = ptoAllowanceForStaff(person, groupId);
+      const amount = numberValue($("addPtoAmount")?.value);
+      const unit = ptoUnitForStaff(person, groupId);
+      const unitText = ptoUnitLabel(unit, amount || currentAllowance);
+      $("addPtoAmountLabel").textContent = `${unit === "periods" ? "PTO periods" : "PTO days"} to add`;
+      $("addPtoPreview").textContent = amount
+        ? `Current annual allowance: ${currentAllowance} ${ptoUnitLabel(unit, currentAllowance)}. New annual allowance: ${currentAllowance + amount} ${ptoUnitLabel(unit, currentAllowance + amount)}.`
+        : `Current annual allowance: ${currentAllowance} ${unitText}. Enter the amount to add.`;
+    }
+
+    function openAddPtoModal(person) {
+      const groupIds = staffVisibleGroupIds(person).filter(canAddPtoForGroup);
+      if (!groupIds.length) {
+        alert("You cannot add PTO for this staff member.");
+        return;
+      }
+      openModal(
+        "Add PTO Allowance",
+        `
+          <form id="addPtoForm" class="form-grid">
+            <input type="hidden" id="addPtoStaffId" value="${esc(person.id)}">
+            <label>Staff Member<input value="${esc(person.name)}" readonly></label>
+            <label>Division<select id="addPtoGroup" required>
+              ${groupIds.map((groupId) => `<option value="${esc(groupId)}">${esc(groupName(groupId))}</option>`).join("")}
+            </select></label>
+            <label><span id="addPtoAmountLabel">PTO days to add</span><input id="addPtoAmount" type="number" min="0.25" step="0.25" inputmode="decimal" placeholder="0" required></label>
+            <label>Reason<textarea id="addPtoNote" placeholder="Optional note"></textarea></label>
+            <p class="small full" id="addPtoPreview"></p>
+          </form>
+        `,
+        `<button class="outline" id="modalCancel">Cancel</button><button class="blue" id="savePtoAllowanceBtn">Add PTO</button>`
+      );
+      $("addPtoGroup").addEventListener("change", updateAddPtoPreview);
+      $("addPtoAmount").addEventListener("input", updateAddPtoPreview);
+      updateAddPtoPreview();
+      $("addPtoAmount").focus();
+    }
+
+    async function saveAddedPtoAllowance() {
+      const person = state.staff.find((item) => item.id === $("addPtoStaffId")?.value);
+      const groupId = $("addPtoGroup")?.value;
+      const amount = numberValue($("addPtoAmount")?.value);
+      if (!person || !groupId || !staffGroupIds(person).includes(groupId) || !canAddPtoForGroup(groupId)) {
+        alert("You cannot add PTO for this staff member.");
+        return;
+      }
+      if (!amount) {
+        alert("Enter the amount of PTO to add.");
+        $("addPtoAmount")?.focus();
+        return;
+      }
+
+      const button = $("savePtoAllowanceBtn");
+      button.disabled = true;
+      button.textContent = "Adding...";
+      const currentAllowance = ptoAllowanceForStaff(person, groupId);
+      const newAllowance = currentAllowance + amount;
+      const unit = ptoUnitForStaff(person, groupId);
+      const ptoByGroup = person.ptoByGroup && typeof person.ptoByGroup === "object" ? { ...person.ptoByGroup } : {};
+      ptoByGroup[groupId] = {
+        ...ptoBucketForStaff(person, groupId),
+        allowance: newAllowance,
+        unit
+      };
+
+      try {
+        const batch = writeBatch(state.db);
+        const staffUpdate = { ptoByGroup, updatedAt: serverTimestamp() };
+        if (staffGroupIds(person).length === 1) {
+          staffUpdate.ptoAllowance = newAllowance;
+          staffUpdate.ptoUnit = unit;
+        }
+        batch.update(doc(state.db, "staff", person.id), staffUpdate);
+        const adjustmentRef = doc(collection(state.db, "ptoAllowanceAdjustments"));
+        batch.set(adjustmentRef, {
+          staffId: person.id,
+          staffName: person.name,
+          groupId,
+          amountAdded: amount,
+          previousAllowance: currentAllowance,
+          newAllowance,
+          unit,
+          note: $("addPtoNote")?.value.trim() || "",
+          addedBy: state.hrUser.id,
+          addedByName: state.hrUser.name,
+          addedByRole: state.hrUser.role,
+          schoolYear: schoolYearForDateKey(todayKey()).label,
+          localMs: Date.now(),
+          createdAt: serverTimestamp()
+        });
+        await batch.commit();
+        closeModal();
+        alert(`Added ${amount} ${ptoUnitLabel(unit, amount)} to ${person.name}. The new annual allowance is ${newAllowance} ${ptoUnitLabel(unit, newAllowance)}.`);
+      } catch (error) {
+        console.error(error);
+        button.disabled = false;
+        button.textContent = "Add PTO";
+        alert("The PTO allowance could not be updated. Please try again.");
+      }
+    }
+
     function renderUserGroupChecks(selected = [], options = {}) {
       const disabled = options.disabled ? "disabled" : "";
       $("userGroupChecks").innerHTML = GROUPS.map((group) => `
@@ -2185,7 +2295,9 @@
     function renderStaffRows() {
       const canManageStaff = state.hrUser?.role === "director";
       $("staffRows").innerHTML = visibleStaff()
-        .map((person) => `
+        .map((person) => {
+          const canAddPto = staffVisibleGroupIds(person).some(canAddPtoForGroup);
+          return `
             <tr>
               <td>${esc(person.name)}</td>
             <td>${esc(staffGroupSummary(person, { visibleOnly: true }))}</td>
@@ -2193,15 +2305,20 @@
             <td>${esc(ptoSummary(person, staffVisibleGroupIds(person)[0] || primaryStaffGroupId(person)))}</td>
             <td><span class="pill">${person.active === false ? "Inactive" : "Active"}</span></td>
             <td>
-              ${canManageStaff ? `<div class="row-actions">
-                <button class="outline" data-edit-staff="${person.id}">Edit</button>
-                <button class="outline" data-pin-staff="${person.id}">Regenerate PIN</button>
-                <button class="outline" data-toggle-staff="${person.id}">${person.active === false ? "Activate" : "Deactivate"}</button>
-                <button class="red" data-delete-staff="${person.id}">Remove</button>
-              </div>` : `<span class="small">View only</span>`}
+              <div class="row-actions">
+                ${canAddPto ? `<button class="outline" data-add-pto="${person.id}">Add PTO</button>` : ""}
+                ${canManageStaff ? `
+                  <button class="outline" data-edit-staff="${person.id}">Edit</button>
+                  <button class="outline" data-pin-staff="${person.id}">Regenerate PIN</button>
+                  <button class="outline" data-toggle-staff="${person.id}">${person.active === false ? "Activate" : "Deactivate"}</button>
+                  <button class="red" data-delete-staff="${person.id}">Remove</button>
+                ` : ""}
+                ${canAddPto || canManageStaff ? "" : `<span class="small">View only</span>`}
+              </div>
             </td>
           </tr>
-        `).join("") || `<tr><td colspan="6">No staff added yet.</td></tr>`;
+          `;
+        }).join("") || `<tr><td colspan="6">No staff added yet.</td></tr>`;
     }
 
     function staffExportRows(options = {}) {
@@ -3790,6 +3907,11 @@
           );
         }
       }
+      if (target.dataset.addPto) {
+        const person = state.staff.find((item) => item.id === target.dataset.addPto);
+        if (person) openAddPtoModal(person);
+      }
+      if (target.id === "savePtoAllowanceBtn") await saveAddedPtoAllowance();
       if (target.id === "saveStaffEditBtn") await saveStaffFromModal();
       if (target.dataset.pinStaff) {
         const person = state.staff.find((item) => item.id === target.dataset.pinStaff);
